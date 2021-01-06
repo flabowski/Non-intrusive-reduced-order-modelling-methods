@@ -15,7 +15,6 @@ from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
     TrialFunction, dot, nabla_grad, split, errornorm, Mesh, plot, MeshEditor, \
     AutoSubDomain, MeshFunction, FacetNormal, assemble, Identity, \
     project, FunctionSpace, sym, Constant, TestFunctions, VectorFunctionSpace
-from dolfin.common.plotting import mesh2triang
 
 
 def plot_up(u, p):
@@ -82,7 +81,6 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, solver):
     [bc.apply(A1) for bc in bcu]
     [bc.apply(A2) for bc in bcp]
 
-    t = 0
     x, y = np.split(mesh.coordinates(), 2, 1)
     tri = mesh.cells()
     np.save("../doc/{:06.0f}x.npy".format(0), x.ravel())
@@ -102,7 +100,7 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, solver):
             # Step 3: Velocity correction step
             b3 = assemble(L3)
             solve(A3, u_.vector(), b3, 'cg', 'sor')
-        except:
+        except:  # FEniCS does not return any meaningful errors yet
             print("./{:06.0f} ({} solver).pdf".format(n+1, solver),
                   "t={:.2f} s\n ({} solver)".format(t, solver))
             fig, axs = plot_up(u_1, p_1)
@@ -113,30 +111,28 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, solver):
         # Update previous solution
         u_1.assign(u_)
         p_1.assign(p_)
-
-        # magnitude = np.linalg.norm(w0, axis=0)
-        # x, y = np.split(mesh.coordinates(), 2, 1)
-        # w0 = u_.compute_vertex_values(mesh)
         u, v = np.split(u_.compute_vertex_values(mesh), 2, 0)
         p = p_.compute_vertex_values(mesh)
-        np.save("../doc/{:06.0f}u.npy".format(n+1), u.ravel())
-        np.save("../doc/{:06.0f}v.npy".format(n+1), v.ravel())
-        np.save("../doc/{:06.0f}p.npy".format(n+1), p.ravel())
-
-        # print(u_.vector())
-
-        if (n % 100) < 1e-4:
-            fig, axs = plot_up(u_, p_)
-            plt.title("t={:.2f} s\n ({} solver)".format(t, solver))
-            plt.savefig("../doc/{:06.0f} ({} solver).png".format(n+1, solver))
-            plt.close(fig)
+        if n > 50000:  # save some results when stable
+            np.save("../doc/{:06.0f}u.npy".format(n+1), u.ravel())
+            np.save("../doc/{:06.0f}v.npy".format(n+1), v.ravel())
+            np.save("../doc/{:06.0f}p.npy".format(n+1), p.ravel())
+            if ((n % 100) < 1e-4):
+                fig, axs = plot_up(u_, p_)
+                plt.title("t={:.2f} s\n ({} solver)".format(t, solver))
+                fn = "../doc/{:06.0f} ({} solver).png".format(n+1, solver)
+                plt.savefig(fn)
+                plt.close(fig)
     return
 
 
 def create2Dmesh(msh):
+    """
+    Helping function to create a 2D mesh for FEniCS from a gmsh.
+    important! Dont leave any unused points like the center of the circle in
+    the node list. FEniCS will crash!
+    """
     msh.prune_z_0()
-    # important!
-    # dont leave any unused points like the center of the circle in the node list. FEniCS will crash!
     nodes = msh.points[1:]
     cells = msh.cells_dict["triangle"].astype(np.uintp)-1
     mesh = Mesh()
@@ -196,9 +192,9 @@ def topandbottom(x, on_boundary):
 
 
 def cylinderwall(x, on_boundary):
-#     bbx_x = (.1499 < x[0]) & (x[0] < .2501)
-#     bbx_y = (.1499 < x[1]) & (x[1] < .2501)
-#     return bbx_x and bbx_y and on_boundary
+    # bbx_x = (.1499 < x[0]) & (x[0] < .2501)
+    # bbx_y = (.1499 < x[1]) & (x[1] < .2501)
+    # return bbx_x and bbx_y and on_boundary
     in_circle = ((x[0]-.2)*(x[0]-.2) + (x[1]-.2)*(x[1]-.2)) < 0.0025001
     return (in_circle) & on_boundary
 
@@ -230,7 +226,6 @@ def setup_cylinder_problem(mesh, U0, coupled=True):
     bc3 = DirichletBC(Q, Constant(1), outlet)
     bcs = [bc0, bc1, bc2, bc3]
 
-
     ASD1 = AutoSubDomain(topandbottom)
     ASD2 = AutoSubDomain(cylinderwall)
     mf = MeshFunction("size_t", mesh, 1)
@@ -245,70 +240,33 @@ if __name__ == "__main__":
     cfl = .01
     T = 8
     nu = 1e-3
-    rho = 1.0
+    rho = 5
     U_m = .3
     U_m = 1.5
-    U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"; x = [0, .41/2]
+    U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
     mesh = cylinder(.01)
-    # mesh = cylinder(.41/19)
-    # mesh = Mesh(str("./mesh.xml"))
     U0 = Expression((U0_str, "0"), U_m=U_m, degree=2)
     mu = nu*rho
+    x = [0, .41/2]  # evaluate the Expression at the center of the channel
     U_mean = 2/3*eval(U0_str)
     dt = cfl*mesh.hmin()/np.mean(U_mean)
-    # dt = 1e-3 / 2
     N = int((T/dt) // 1)
-    # N = 15
+
     print(dt)
     print("Re set to: ", U_mean*.1/mu)
     print("cfl number: ", np.mean(U_mean)*dt/mesh.hmin())
     print(N, "timesteps")
     print("Unknowns: ", mesh.num_edges())
     print("coordinates: ", len(mesh.coordinates()))
-    # asd
-    # print("Unknowns: ", len(mesh.coordinates())*4)
-
-    tic = timeit.default_timer()
-    # time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "Newton2")
-    toc = timeit.default_timer()
-    dt2 = toc-tic
-
-    tic = timeit.default_timer()
-    # time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "Picard1")
-    toc = timeit.default_timer()
-    dt3 = toc-tic
-
-    tic = timeit.default_timer()
-    # time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "Picard2")
-    toc = timeit.default_timer()
-    dt4 = toc-tic
 
     VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
-
     tic = timeit.default_timer()
     time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "IPCS")
     toc = timeit.default_timer()
-    dt5 = toc-tic
-
-    tic = timeit.default_timer()
-    # time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "Yngve")
-    toc = timeit.default_timer()
-    dt6 = toc-tic
-
-    VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0)
-    tic = timeit.default_timer()
-    # time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "Newton1")
-    toc = timeit.default_timer()
-    dt1 = toc-tic
 
     print("Re set to: ", U_mean*.1/mu)
     print("cfl number: ", np.mean(U_mean)*dt/mesh.hmin())
     print(N, "timesteps")
     print("Unknowns: ", mesh.num_edges())
     print("coordinates: ", len(mesh.coordinates()))
-    print("time Newton1:", dt1)
-    print("time Newton2:", dt2)
-    print("time Picard1:", dt3)
-    print("time Picard2:", dt4)
-    print("time IPCS:", dt5)
-    print("time Yngve:", dt6)
+    print("time IPCS:", toc-tic)
