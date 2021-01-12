@@ -38,7 +38,7 @@ def plot_up(u, p):
     return fig, (ax1, ax2)
 
 
-def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, solver):
+def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho):
     V, Q = VQ
     u, p = TrialFunction(V), TrialFunction(Q)
     vu, vp = TestFunction(V), TestFunction(Q)  # for integration
@@ -48,8 +48,6 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, solver):
 
     bcu = [bcs[0], bcs[1], bcs[2]]
     bcp = [bcs[3]]
-    v, q = vu, vp
-    U = 0.5*(u_1 + u)
 
     # Define symmetric gradient
     def epsilon(u):
@@ -60,19 +58,20 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, solver):
         return 2*mu*epsilon(u) - p*Identity(len(u))
 
     n = FacetNormal(mesh)
-
-    F1 = rho*dot((u - u_1) / dt, v)*dx \
-        + rho*dot(dot(u_1, nabla_grad(u_1)), v)*dx \
-        + inner(sigma(U, p_1), epsilon(v))*dx \
-        + dot(p_1*n, v)*ds - dot(mu*nabla_grad(U)*n, v)*ds
+    solver = "IPCS"
+    u_mid = (u + u_1) / 2.0
+    F1 = rho*dot((u - u_1) / dt, vu)*dx \
+        + rho*dot(dot(u_1, nabla_grad(u_1)), vu)*dx \
+        + inner(sigma(u_mid, p_1), epsilon(vu))*dx \
+        + dot(p_1*n, vu)*ds - dot(mu*nabla_grad(u_mid)*n, vu)*ds
     a1 = lhs(F1)
     L1 = rhs(F1)
     # Define variational problem for step 2
-    a2 = dot(nabla_grad(p), nabla_grad(q))*dx
-    L2 = dot(nabla_grad(p_1), nabla_grad(q))*dx - (1/dt)*div(u_)*q*dx
+    a2 = dot(nabla_grad(p), nabla_grad(vp))*dx
+    L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (1/dt)*div(u_)*vp*dx
     # Define variational problem for step 3
-    a3 = dot(u, v)*dx
-    L3 = dot(u_, v)*dx - dt*dot(nabla_grad(p_ - p_1), v)*dx
+    a3 = dot(u, vu)*dx
+    L3 = dot(u_, vu)*dx - dt*dot(nabla_grad(p_ - p_1), vu)*dx
     # Assemble matrices
     A1 = assemble(a1)
     A2 = assemble(a2)
@@ -209,16 +208,9 @@ def outlet(x, on_boundary):
 
 def setup_cylinder_problem(mesh, U0, coupled=True):
     # Build function space
-    if coupled:
-        P2 = VectorElement("CG", mesh.ufl_cell(), 2)
-        P1 = FiniteElement("CG", mesh.ufl_cell(), 1)
-        TH = P2 * P1
-        VQ = FunctionSpace(mesh, TH)
-        V, Q = VQ.sub(0), VQ.sub(1)
-    else:
-        V = VectorFunctionSpace(mesh, 'P', 2)
-        Q = FunctionSpace(mesh, 'P', 1)
-        VQ = (V, Q)
+    V = VectorFunctionSpace(mesh, 'P', 2)
+    Q = FunctionSpace(mesh, 'P', 1)
+    VQ = (V, Q)
 
     bc0 = DirichletBC(V, Constant((0, 0)), cylinderwall)
     bc1 = DirichletBC(V, Constant((0, 0)), topandbottom)
@@ -238,22 +230,26 @@ def setup_cylinder_problem(mesh, U0, coupled=True):
 
 if __name__ == "__main__":
     cfl = .01
+    mu = 1e-3 * .75
     T = 8
-    nu = 1e-3
-    rho = 5
+    # nu = 1e-3
+    rho = 1.
     U_m = .3
     U_m = 1.5
     U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
     mesh = cylinder(.01)
     U0 = Expression((U0_str, "0"), U_m=U_m, degree=2)
-    mu = nu*rho
+    nu = mu/rho
     x = [0, .41/2]  # evaluate the Expression at the center of the channel
     U_mean = 2/3*eval(U0_str)
     dt = cfl*mesh.hmin()/np.mean(U_mean)
     N = int((T/dt) // 1)
+    L = .1
 
     print(dt)
-    print("Re set to: ", U_mean*.1/mu)
+    print("Re set to: ", rho*U_mean*L/mu)
+    print("Re set to: ", U_mean*L/nu)
+    # print("Re set to: ", U_mean*.1/mu)
     print("cfl number: ", np.mean(U_mean)*dt/mesh.hmin())
     print(N, "timesteps")
     print("Unknowns: ", mesh.num_edges())
@@ -261,7 +257,7 @@ if __name__ == "__main__":
 
     VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
     tic = timeit.default_timer()
-    time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, "IPCS")
+    time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho)
     toc = timeit.default_timer()
 
     print("Re set to: ", U_mean*.1/mu)
