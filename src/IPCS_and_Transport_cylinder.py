@@ -15,8 +15,9 @@ from tqdm import trange  # Progress bar
 from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
     dx, Function, DirichletBC, Expression, solve, lhs, rhs, TestFunction, ds, \
     TrialFunction, dot, nabla_grad, split, errornorm, Mesh, plot, MeshEditor, \
-    AutoSubDomain, MeshFunction, FacetNormal, assemble, Identity, \
-    project, FunctionSpace, sym, Constant, UserExpression, VectorFunctionSpace
+    AutoSubDomain, MeshFunction, FacetNormal, assemble, Identity, CellDiameter,\
+    project, FunctionSpace, sym, Constant, UserExpression, VectorFunctionSpace,\
+    sqrt, DOLFIN_EPS, CompiledExpression, compile_cpp_code
 
 
 def plot_up(u, p, rho):
@@ -29,6 +30,7 @@ def plot_up(u, p, rho):
     tri = mesh.cells()
     pressure = p.compute_vertex_values(mesh)
     density = rho.compute_vertex_values(mesh)
+    print(density[x==0])
 
     fig, (ax1, ax2, ax3) = plt.subplots(3, sharex=True, sharey=True,
                                         figsize=(12, 9))
@@ -54,9 +56,11 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
     u_, p_, r_ = Function(V), Function(Q), Function(L)  # for the solution
     u_1, p_1, r_1 = Function(V), Function(Q), Function(L)  # for the prev. solution
     u, p, r = TrialFunction(V), TrialFunction(Q), TrialFunction(L)  # unknown!
+    tau_SUPG = Function(L)
 
     bcu = [bcs[0], bcs[1]]  # note: no-slip at cylinder wall is no longer used!
     bcp = [bcs[2]]
+    bcr = [DirichletBC(L, rho, inlet)]
 
     # Define symmetric gradient
     def epsilon(u):
@@ -66,14 +70,107 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
     def sigma(u, p):
         return 2*mu*epsilon(u) - p*Identity(len(u))
 
-    class _rho_(UserExpression):
-        def eval(self, values, x):
-            if (x[0]-.2)*(x[0]-.2) + (x[1]-.2)*(x[1]-.2) < 0.0025:
-                values[0] = rho*10.
-            else:
-                values[0] = rho
-    f0 = _rho_(degree=2, element=L.ufl_element())
-    r_1.assign(project(f0, mesh=mesh))
+    magnitude = project((sqrt(inner(u_, u_))), mesh=mesh).vector().vec().array
+    h = project(CellDiameter(mesh), mesh=mesh).vector().vec().array
+    Pe = magnitude * h / (2.0 * D)
+    tau_np = np.zeros_like(Pe)
+    ll = Pe > 0.
+    tau_np[ll] = h[ll] / (2.0*magnitude[ll]) * (1.0/np.tanh(Pe[ll]) - 1.0/Pe[ll])
+    tau_SUPG.vector().vec().array = tau_np
+    # print(h)
+    # print(h.min(), h.max(), h.mean())
+
+    # # C++ version (does not work)
+    # ue_code = '''
+    # //https://fenicsproject.discourse.group/t/pass-function-to-c-expression/1081
+
+    # #include <pybind11/pybind11.h>
+    # #include <pybind11/eigen.h>
+    # #include <dolfin/mesh/Vertex.h>
+    # namespace py = pybind11;
+    # #include <dolfin/function/Expression.h>
+    # #include <dolfin/function/Function.h>
+    # #include <dolfin/mesh/Mesh.h>
+
+    # class SUPG : public dolfin::Expression
+    # {
+    # public:
+    #     double D;
+    #     // std::shared_ptr<Mesh> mesh; // doesn work
+
+    #     std::shared_ptr<dolfin::Function> velocity;
+    #     SUPG(std::shared_ptr<dolfin::Function> u_) : dolfin::Expression(2)
+    #     {
+    #         velocity = u_;
+    #     }
+
+    #     void eval(Eigen::Ref<Eigen::VectorXd> values,
+    #               Eigen::Ref<const Eigen::VectorXd> x,
+    #               const ufc::cell& cell) const override
+    #     {
+    #         //Cell cell(*mesh, c.index);
+    #         velocity->eval(values, x);  // values now holds the velocity?
+    #         double tau = 0.0;
+    #         //double h = cell.h();
+    #         //double h = cell.diameter();
+
+    #         double h = 0.015;
+    #         double magnitude = 0.0;  // pythagoras
+    #         for (uint i=0; i<x.size(); ++i)
+    #         {
+    #             magnitude += values[i] * values[i];
+    #         }
+    #         magnitude = sqrt(magnitude);
+    #         double Pe = magnitude * h / (2.0 * D);
+    #         if (Pe > DOLFIN_EPS)
+    #         {
+    #             tau = h / (2.0*magnitude) * (1.0/tanh(Pe) - 1.0/Pe);
+    #         }
+    #         values[0] = tau;
+    #     };
+    # };
+
+    # PYBIND11_MODULE(SIGNATURE, m)
+    # {
+    #   py::class_<SUPG, std::shared_ptr<SUPG>, dolfin::Expression>
+    #     (m, "SUPG")
+    #     .def(py::init<std::shared_ptr<dolfin::Function>>())
+    #     .def_readwrite("D", &SUPG::D)
+    #     .def_readwrite("velocity", &SUPG::velocity);
+    # }
+    # '''
+    # compiled = compile_cpp_code(ue_code)
+    # expr = CompiledExpression(compiled.SUPG(u_.cpp_object()), D=D, degree=1)
+    # tau_supg_from_expr = project(expr, mesh=mesh).vector().vec().array
+    # print(tau_supg_from_expr)
+
+    # class _rho_(UserExpression):
+    #     def eval(self, values, x):
+    #         if (x[0]-.2)*(x[0]-.2) + (x[1]-.2)*(x[1]-.2) < 0.0025:
+    #             values[0] = rho*5
+    #         else:
+    #             values[0] = rho
+    # f0 = _rho_(degree=2, element=L.ufl_element())
+    # r_1.assign(project(f0, mesh=mesh))
+
+    #TODO: use numy instead!
+    x, y = np.split(L.tabulate_dof_coordinates(), 2, 1)
+    x, y = x.ravel(), y.ravel()
+    ll = (x-.2)*(x-.2) + (y-.2)*(y-.2) < 0.0025  # logic list
+    r_1.vector().vec().array = rho
+    r_1.vector().vec().array[ll] = rho * 5
+
+    cells_mapped = np.empty((mesh.num_cells(), 3), dtype=np.int32)
+    for i in range(mesh.num_cells()):  # len(mesh.cells())
+        # print(cells_mapped[i], L.dofmap().cell_dofs(i))
+        cells_mapped[i] = L.dofmap().cell_dofs(i)
+
+    data_mapped = r_1.vector().vec().array
+    fig, ax = plt.subplots()
+    ax.tricontourf(x, y, cells_mapped, data_mapped, levels=15)
+    ax.set_aspect("equal")
+    plt.suptitle("initial density")
+    plt.show()
 
     n = FacetNormal(mesh)
     u_mid = (u + u_1) / 2.0
@@ -90,12 +187,12 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
     a3 = dot(u, vu)*dx
     L3 = dot(u_, vu)*dx - dt*dot(nabla_grad(p_ - p_1), vu)*dx
     # Step 4: Transport of rho / Convection-diffusion and SUPG
-    beta = 0.0
+    vr = vr + tau_SUPG * inner(u_, grad(vr))  # SUPG stabilization
     r_mid = (r + r_1) / 2.0
     F4 = dot((r - r_1) / dt, vr) * dx \
         + dot(dot(u_, grad(r_mid)),  vr) * dx \
         + dot(D*grad(r_mid), grad(vr)) * dx
-    # F4 += beta * inner(dot(u_, grad(r_mid), dot(u_, grad(vr)))) * dx  # SUPG
+    # F4 += beta * dot(dot(u_, grad(r_mid)), dot(u_, grad(vr))) * dx
     a4 = lhs(F4)
     L4 = rhs(F4)
     # Assemble matrices
@@ -111,6 +208,7 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
                    dtype=np.float32)
     u_y = np.zeros_like(u_x)
     pressure = np.zeros_like(u_x)
+    density = np.zeros_like(u_x)
     for n in trange(N):
         t = n*dt
         # Step 1: Tentative velocity step
@@ -127,8 +225,21 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
         b3 = assemble(L3)
         solve(A3, u_.vector(), b3, 'cg', 'sor')
         # Step 4: Transport of rho / Convection-diffusion and SUPG
+
+
+        magnitude = project((sqrt(inner(u_, u_))), mesh=mesh).vector().vec().array
+        h = project(CellDiameter(mesh), mesh=mesh).vector().vec().array
+        Pe = magnitude * h / (2.0 * D)
+        tau_np = np.zeros_like(Pe)
+        ll = Pe > 0.
+        tau_np[ll] = h[ll] / (2.0*magnitude[ll]) * (1.0/np.tanh(Pe[ll]) - 1.0/Pe[ll])
+        tau_SUPG.vector().vec().array = tau_np
+
+
         A4 = assemble(a4)
         b4 = assemble(L4)
+        [bc.apply(A4) for bc in bcr]
+        [bc.apply(b4) for bc in bcr]
         solve(A4, r_.vector(), b4, 'bicgstab', 'hypre_amg')
         # F = (div(D*grad(rho_1)) - div(u_*rho_1))*dt + rho_1
         # rho_ = project(F, mesh=mesh)
@@ -142,7 +253,8 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
             i = n//2
             u_x[i], u_y[i] = np.split(u_.compute_vertex_values(mesh), 2, 0)
             pressure[i] = p_.compute_vertex_values(mesh)
-            if ((n % 100) < 1e-4):
+            density[i] = r_.compute_vertex_values(mesh)
+            if ((n % 2) < 1e-4):
                 fig, axs = plot_up(u_, p_, r_)
                 plt.suptitle("t={:.2f} s".format(t))
                 fn = my_dir+"frame_{:06.0f}.png".format(n+1)
@@ -159,9 +271,10 @@ def time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D):
     np.save(my_dir+"{:06.0f}x.npy".format(0), x.ravel())
     np.save(my_dir+"{:06.0f}y.npy".format(0), y.ravel())
     np.save(my_dir+"{:06.0f}t.npy".format(0), tri)
-    np.save(my_dir+"{:06.0f}u.npy".format(n+1), u_x.ravel())
-    np.save(my_dir+"{:06.0f}v.npy".format(n+1), u_y.ravel())
-    np.save(my_dir+"{:06.0f}p.npy".format(n+1), pressure.ravel())
+    np.save(my_dir+"{:06.0f}u.npy".format(n+1), u_x)
+    np.save(my_dir+"{:06.0f}v.npy".format(n+1), u_y)
+    np.save(my_dir+"{:06.0f}p.npy".format(n+1), pressure)
+    np.save(my_dir+"{:06.0f}r.npy".format(n+1), density)
     return
 
 
@@ -289,15 +402,15 @@ def setup_cylinder_problem(mesh, U0, coupled=True):
 
 if __name__ == "__main__":
     cfl = .01
-    T = 8
+    T = 2.5
     # nu = 1e-3
     mu = 1e-3 * 1
     rho = 1.
-    D = .01
+    D = .0001
     # U_m = .3
     U_m = 1.5
     U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
-    mesh = rectangle(.01)
+    mesh = rectangle(.015)
     U0 = Expression((U0_str, "0"), U_m=U_m, degree=2)
     # mu = nu*rho
     nu = mu/rho
@@ -315,9 +428,9 @@ if __name__ == "__main__":
     print("Unknowns: ", mesh.num_edges())
     print("coordinates: ", len(mesh.coordinates()))
 
-    VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
+    VQL, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
     tic = timeit.default_timer()
-    time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho, D)
+    time_stepping(mesh, VQL, bcs, ds_, N, dt, mu, rho, D)
     toc = timeit.default_timer()
 
     print("Re set to: ", U_mean*.1/mu)

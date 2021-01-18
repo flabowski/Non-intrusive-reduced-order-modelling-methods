@@ -6,6 +6,7 @@ Created on Wed Nov 11 10:29:50 2020
 @author: florianma
 """
 import numpy as np
+import os
 import matplotlib.pyplot as plt
 import pygmsh
 import timeit
@@ -38,9 +39,11 @@ def plot_up(u, p):
     return fig, (ax1, ax2)
 
 
-def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho):
+def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho, nu):
+    my_dir = "../mu({:.4f})/".format(mu)
+    if not os.path.exists(my_dir):
+        os.makedirs(my_dir)
     V, Q = VQ
-    u, p = TrialFunction(V), TrialFunction(Q)
     vu, vp = TestFunction(V), TestFunction(Q)  # for integration
     u_, p_ = Function(V), Function(Q)  # for the solution
     u_1, p_1 = Function(V), Function(Q)  # for the prev. solution
@@ -79,12 +82,10 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho):
     # Apply boundary conditions to matrices
     [bc.apply(A1) for bc in bcu]
     [bc.apply(A2) for bc in bcp]
-
-    x, y = np.split(mesh.coordinates(), 2, 1)
-    tri = mesh.cells()
-    np.save("../doc/{:06.0f}x.npy".format(0), x.ravel())
-    np.save("../doc/{:06.0f}y.npy".format(0), y.ravel())
-    np.save("../doc/{:06.0f}t.npy".format(0), tri)
+    time = np.zeros((N-50000,))
+    # u_x = np.zeros((N-50000, len(p_.compute_vertex_values(mesh))))
+    # u_y = np.zeros_like(u_x)
+    # pressure = np.zeros_like(u_x)
     for n in trange(N):
         t = n*dt
         try:
@@ -103,25 +104,34 @@ def time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho):
             print("./{:06.0f} ({} solver).pdf".format(n+1, solver),
                   "t={:.2f} s\n ({} solver)".format(t, solver))
             fig, axs = plot_up(u_1, p_1)
-            plt.title("t={:.2f} s\n ({} solver)".format(t, solver))
-            plt.savefig("./{:06.0f} ({} solver).pdf".format(n+1, solver))
+            plt.suptitle("t={:.2f} s".format(t))
+            plt.savefig("./frame{:06.0f}.pdf".format(n+1, solver))
             plt.close(fig)
             raise
         # Update previous solution
         u_1.assign(u_)
         p_1.assign(p_)
-        u, v = np.split(u_.compute_vertex_values(mesh), 2, 0)
-        p = p_.compute_vertex_values(mesh)
         if n > 50000:  # save some results when stable
-            np.save("../doc/{:06.0f}u.npy".format(n+1), u.ravel())
-            np.save("../doc/{:06.0f}v.npy".format(n+1), v.ravel())
-            np.save("../doc/{:06.0f}p.npy".format(n+1), p.ravel())
+            u_x, u_y = np.split(u_.compute_vertex_values(mesh), 2, 0)
+            pressure = p_.compute_vertex_values(mesh)
+            time[n-50000] = t
+            np.save(my_dir+"{:06.0f}u.npy".format(n), u_x.ravel())
+            np.save(my_dir+"{:06.0f}v.npy".format(n), u_y.ravel())
+            np.save(my_dir+"{:06.0f}p.npy".format(n), pressure.ravel())
             if ((n % 100) < 1e-4):
                 fig, axs = plot_up(u_, p_)
-                plt.title("t={:.2f} s\n ({} solver)".format(t, solver))
+                plt.suptitle("t={:.2f} s\n ({} solver)".format(t, solver))
                 fn = "../doc/{:06.0f} ({} solver).png".format(n+1, solver)
                 plt.savefig(fn)
                 plt.close(fig)
+
+    x, y = np.split(mesh.coordinates(), 2, 1)
+    tri = mesh.cells()
+    np.save(my_dir+"{:06.0f}t.npy".format(0), time)
+    np.save(my_dir+"{:06.0f}x.npy".format(0), x.ravel())
+    np.save(my_dir+"{:06.0f}y.npy".format(0), y.ravel())
+    np.save(my_dir+"{:06.0f}t.npy".format(0), tri)
+
     return
 
 
@@ -257,7 +267,7 @@ if __name__ == "__main__":
 
     VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
     tic = timeit.default_timer()
-    time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho)
+    time_stepping(mesh, VQ, bcs, ds_, N, dt, mu, rho, nu)
     toc = timeit.default_timer()
 
     print("Re set to: ", U_mean*.1/mu)
