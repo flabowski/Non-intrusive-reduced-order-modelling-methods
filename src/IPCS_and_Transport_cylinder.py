@@ -171,8 +171,9 @@ def ns_IPCS_convection_supg(VQL, mesh, bcs, dt, parameter):
     vr = vr + tau_SUPG * inner(u_, grad(vr))  # SUPG stabilization
     r_mid = (r + r_1) / 2.0
     F4 = dot((r - r_1) / dt, vr) * dx \
-        + dot(dot(u_, grad(r_mid)),  vr) * dx \
-        + dot(D*grad(r_mid), grad(vr)) * dx
+        + dot(dot(u_, grad(r_mid)),  vr) * dx
+    if D > 0.0:
+        F4 += dot(D*grad(r_mid), grad(vr)) * dx
     # F4 += beta * dot(dot(u_, grad(r_mid)), dot(u_, grad(vr))) * dx
     a4 = lhs(F4)
     L4 = rhs(F4)
@@ -206,14 +207,15 @@ def solve_timestep(u_, p_, r_, u_1, p_1, r_1, tau_SUPG, D,
     # Step 4: Transport of rho / Convection-diffusion and SUPG
 
     # wont work for DG
-    mesh = tau_SUPG.function_space().mesh()
-    magnitude = project((sqrt(inner(u_, u_))), mesh=mesh).vector().vec().array
-    h = project(CellDiameter(mesh), mesh=mesh).vector().vec().array
-    Pe = magnitude * h / (2.0 * D)
-    tau_np = np.zeros_like(Pe)
-    ll = Pe > 0.
-    tau_np[ll] = h[ll] / (2.0*magnitude[ll]) * (1.0/np.tanh(Pe[ll]) - 1.0/Pe[ll])
-    tau_SUPG.vector().vec().array = tau_np
+    if D > 0.0:
+        mesh = tau_SUPG.function_space().mesh()
+        magnitude = project((sqrt(inner(u_, u_))), mesh=mesh).vector().vec().array
+        h = project(CellDiameter(mesh), mesh=mesh).vector().vec().array
+        Pe = magnitude * h / (2.0 * D)
+        tau_np = np.zeros_like(Pe)
+        ll = Pe > 0.
+        tau_np[ll] = h[ll] / (2.0*magnitude[ll]) * (1.0/np.tanh(Pe[ll]) - 1.0/Pe[ll])
+        tau_SUPG.vector().vec().array = tau_np
 
     A4 = assemble(a4)
     b4 = assemble(L4)
@@ -346,7 +348,7 @@ def plot_upr(mesh, res):
 
 if __name__ == "__main__":
     cfl = .01
-    T = 8
+    T = 3
     rho = 1.
     U_m = .3
     U_m = 1.5
@@ -359,7 +361,7 @@ if __name__ == "__main__":
     N = int((T/dt) // 1)
     L = .1
     for Re in [20, 50, 75, 100, 150, 200]:
-        for D in [.0001, .00001, .000001]:
+        for D in [.0, .00001, .000001, 0.0001]:
             mu = rho*U_mean*L/Re
             nu = mu/rho
             my_dir = "../doc/mu({:.4f})_D({:6f})/".format(mu, D)
