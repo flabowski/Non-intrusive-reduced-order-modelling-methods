@@ -250,7 +250,7 @@ def normalize_phase(V, t, mu):
         ax2.plot(time_corrected[i], V_uy[i], marker=".", zorder=n_datasets-i)
     ax1.legend(labelspacing=.0, ncol=2, fontsize=8, title="Reynolds number")
     ax2.annotate(r'Re', xy=(0.05, 0.05),
-                 xytext=(-40, -40), textcoords='offset points',
+                 xytext=(-50, -50), textcoords='offset points',
                  arrowprops=dict(arrowstyle="->",
                                  connectionstyle="arc3,rad=.15"),
                  zorder=n_datasets+1)
@@ -264,23 +264,29 @@ def normalize_phase(V, t, mu):
     fig, (ax1, ax2) = plt.subplots(2, sharex=True,
                                    figsize=(plot_width/2.54, 10/2.54))
     ax1.plot(Re, period, "o")
-    ax2.plot(Re, amplitude, "o")
+    ax2.plot(Re, amplitude, "o", label="estimation from fit")
     ax1.plot(Re[[0, 1]], period[[0, 1]], "ro")
-    ax2.plot(Re[[0, 1]], amplitude[[0, 1]], "ro")
+    ax2.plot(Re[[0, 1]], amplitude[[0, 1]], "ro", label="outlier (no oscillation)")
+    plt.legend()
     ax2.set_xlabel("Reynolds number")
-    ax1.set_title("period")
-    ax2.set_title("amplitude")
+    ax1.set_ylabel("period")
+    ax2.set_ylabel("amplitude")
+    plt.suptitle("Oscillation of the right singular values")
+    # plt.tight_layout()
     plt.show()
 
     fig, (ax1, ax2) = plt.subplots(2, sharex=True,
                                    figsize=(plot_width/2.54, 10/2.54))
     ax1.plot(.1/Re, period, "o")
-    ax2.plot(.1/Re, amplitude, "o")
+    ax2.plot(.1/Re, amplitude, "o", label="estimation from fit")
     ax1.plot(.1/Re[[0, 1]], period[[0, 1]], "ro")
-    ax2.plot(.1/Re[[0, 1]], amplitude[[0, 1]], "ro")
+    ax2.plot(.1/Re[[0, 1]], amplitude[[0, 1]], "ro", label="outlier (no oscillation)")
     ax2.set_xlabel("viscosity")
-    ax1.set_title("period")
-    ax2.set_title("amplitude")
+    # ax2.set_xlabel("Reynolds number")
+    ax1.set_ylabel("period")
+    ax2.set_ylabel("amplitude")
+    plt.suptitle("Oscillation of the right singular values")
+    plt.legend()
     plt.show()
     return phase, period
 
@@ -293,7 +299,7 @@ if __name__ == "__main__":
     # r: truncation rank
     # U_x snapshot matrix. SVD: U = U*S*V
 
-    n_modes = 15
+    n_modes = 200
     path = "C:/Users/florianma/Documents/data/flow_around_cylinder/"
 
     plt.close("all")
@@ -312,6 +318,7 @@ if __name__ == "__main__":
     plt.show()
     plot_eigenfaces(U_full, x, y, tri)
     plot_mode_amplitude(S_full, V_full, t, mu)
+    # asd
 
     n_nodes, n_datasets, n_snapshots_per_dataset = U_u.shape
     trainingset = np.empty((n_datasets,), dtype=np.bool)
@@ -321,6 +328,7 @@ if __name__ == "__main__":
     x_bp = np.zeros((3, len(n_ss), n_datasets), dtype=np.int32)
     set_nr = np.zeros((3, len(n_ss), n_datasets), dtype=np.int32)
     for ns, snapshots_per_dataset in enumerate(n_ss):
+        n_modes = snapshots_per_dataset
         U_u, U_v, U_p, t = select_random_snapsots(U_u_all, U_v_all, U_p_all,
                                                   t_all, snapshots_per_dataset)
         snapshots = [U_u, U_v, U_p]
@@ -341,6 +349,16 @@ if __name__ == "__main__":
             interpolators = 3 * [n_modes * [None]]
             x1_validation = mu[i] * np.ones((snapshots_per_dataset))
             x2_validation = t[i, :]
+
+            # fig, (ax1) = plt.subplots(1, sharex=True,
+            #                           figsize=(plot_width/2.54, 10/2.54))
+            # ax1.plot(.1/x1_train.ravel(), x2_train.ravel(), "o", color="tab:orange", label="training data")
+            # ax1.plot(.1/x1_validation.ravel(), x2_validation.ravel(), "o", color="tab:blue", label="test data")
+            # ax1.set_ylabel("time")
+            # ax1.set_xlabel("Re")
+            # plt.suptitle("Parameter space")
+            # plt.legend()
+            # plt.show()
             # V_interpolated = 3*[np.zeros((snapshots_per_dataset, n_modes))]
             V_interpolated = [np.zeros((snapshots_per_dataset, n_modes)),
                               np.zeros((snapshots_per_dataset, n_modes)),
@@ -364,7 +382,7 @@ if __name__ == "__main__":
                 S_hat = S[j].numpy()[:n_modes]  # (r, r) / (r,) wo  non zero elements
                 V_hat = V_interpolated[j]  # (r, m)
                 res[j] = np.dot(U_hat, S_hat[:, None]*V_hat.T) + M[j].numpy()  # (n, m)
-                mse[j, ns, i] = ((snapshots[j][:, i, :] - res[j])**2).mean()
+                mse[j, ns, i] = ((snapshots[j][:, i, :] - res[j])**2).max()
                 x_bp[j, ns, i] = snapshots_per_dataset
                 set_nr[j, ns, i] = j
                 print(i, j, mse[j, ns, i])
