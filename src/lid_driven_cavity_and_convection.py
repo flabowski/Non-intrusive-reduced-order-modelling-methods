@@ -96,7 +96,9 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     convection = rho_*dot(dot(u_mid, nabla_grad(u_k)), vu) * dx
     diffusion = mu_*inner(grad(u_mid), grad(vu))*dx - mu_*dot(nabla_grad(u_mid)*n, vu)*ds  # integrated by parts
     pressure = -inner(p_1, div(vu))*dx + dot(p_1*n, vu)*ds  # integrated by parts
-    # F1 = acceleration + convection + diffusion + pressure
+    body_force = dot(df.Constant((0.0, -g))*rho_, vu)*dx + dot(df.Constant((0.0, 0.0)), vu) * ds
+    body_force = dot(df.Constant((0.0, -g))*1, vu)*dx + dot(df.Constant((0.0, 0.0)), vu) * ds
+    F1 = acceleration + convection + diffusion + pressure + body_force
 
     # f = df.Constant((0.0, - 1000*9.81))
     # T = df.Constant((0.0, 0.0))
@@ -109,11 +111,11 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     # Define variational problem for step 2
     a2 = dot(nabla_grad(p), nabla_grad(vp))*dx
     L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (1/dt)*div(u_)*vp*dx
-    # L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (2*rho_/dt)*div(u_)*vp*dx
+    L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (1*rho_/dt)*div(u_)*vp*dx
     # Define variational problem for step 3
     a3 = dot(u, vu)*dx
     L3 = dot(u_, vu)*dx - (dt/1)*dot(nabla_grad(p_ - p_1), vu)*dx
-    # L3 = dot(u_, vu)*dx - (dt/2*rho_)*dot(nabla_grad(p_ - p_1), vu)*dx
+    L3 = dot(u_, vu)*dx - (dt/(1*rho_))*dot(nabla_grad(p_ - p_1), vu)*dx
     # Step 4: Transport of rho / Convection-diffusion and SUPG
     # vr = vr + tau_SUPG * inner(u_, grad(vr))  # SUPG stabilization
     t_mid = (t + t_1) / 2.0
