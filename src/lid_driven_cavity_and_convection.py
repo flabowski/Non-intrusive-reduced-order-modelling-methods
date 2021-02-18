@@ -83,12 +83,6 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     rho_.vector().vec().array = rho(t_1.vector().vec().array)
 
     n = df.FacetNormal(mesh)
-    u_mid = (u + u_1) / 2.0
-    # l2 see F4
-    F1 = rho_*dot((u - u_1) / dt, vu)*dx
-    F1 += rho_*dot(dot(u_1, nabla_grad(u_1)), vu)*dx
-    F1 += inner(sigma(u_mid, p_1, mu_), epsilon(vu))*dx
-    F1 += dot(p_1*n, vu)*ds - dot(mu_*nabla_grad(u_mid)*n, vu)*ds
 
     # implicit:
     u_mid = (u + u_1) / 2.0  # Crank-Nicolson
@@ -99,12 +93,6 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     body_force = dot(df.Constant((0.0, -g))*rho_, vu)*dx + dot(df.Constant((0.0, 0.0)), vu) * ds
     body_force = dot(df.Constant((0.0, -g))*1, vu)*dx + dot(df.Constant((0.0, 0.0)), vu) * ds
     F1 = acceleration + convection + diffusion + pressure + body_force
-
-    # f = df.Constant((0.0, - 1000*9.81))
-    # T = df.Constant((0.0, 0.0))
-    # F1 += (dot(f, vu) * dx)
-    # F1 += dot(df.Constant((0.0, -g))*rho_, vu)*dx
-    # F1 += dot(df.Constant((0.0, 0.0)), vu) * ds
 
     a1 = df.lhs(F1)
     L1 = df.rhs(F1)
