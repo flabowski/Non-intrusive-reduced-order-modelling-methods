@@ -22,12 +22,12 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     fenics code: weak form of the problem.
     """
     dx, ds = df.dx, df.ds
-    dot, inner, div = df.dot,  df.inner, df.div
+    dot, inner, outer, div = df.dot,  df.inner,  df.outer, df.div
     nabla_grad, grad = df.nabla_grad, df.grad
     test_f, trial_f = df.TestFunction, df.TrialFunction
 
     U0, D, mu_solid = parameter
-    g = 9.81
+    g = 9.81/1.0000000000
     # function space
     V = df.VectorFunctionSpace(mesh, 'P', 2)
     Q = df.FunctionSpace(mesh, 'P', 1)
@@ -48,9 +48,9 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
 
     vu, vp, vt = test_f(V), test_f(Q), test_f(T)
     u_, p_, t_ = df.Function(V), df.Function(Q), df.Function(T)  # solution
-    u_1, p_1, t_1 = df.Function(V), df.Function(Q), df.Function(T)  # solution1
+    mu_k, rho_k = df.Function(T), df.Function(T)
+    u_1, p_1, t_1, rho_1 = df.Function(V), df.Function(Q), df.Function(T), df.Function(T)  # solution1
     u, p, t = trial_f(V), trial_f(Q), trial_f(T)  # unknown!
-    mu_, rho_ = df.Function(T), df.Function(T)
     u_k = df.Function(V)
 
     # boundary conditions
@@ -58,69 +58,66 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     topflow = df.Expression(("-x[0] * (x[0] - 1.0) * 6.0 * m", "0.0"),
                             m=U0, degree=2)
     bc0 = df.DirichletBC(V, topflow, top)
-    # bc0 = df.DirichletBC(V, df.Constant((U0, 0)), top)
     bc1 = df.DirichletBC(V, no_slip, left)
     bc2 = df.DirichletBC(V, no_slip, bottom)
     bc3 = df.DirichletBC(V, no_slip, right)
-    bc4 = df.DirichletBC(Q, df.Constant(0), top)
+    # bc4 = df.DirichletBC(Q, df.Constant(0), top)
     # bc3 = df.DirichletBC(T, df.Constant(800), top)
     bcu = [bc0, bc1, bc2, bc3]
     # no boundary conditions for the pressure
     bcp = []
-    # bcp = [df.DirichletBC(Q, df.Constant(1), top)]
+    # bcp = [df.DirichletBC(Q, df.Constant(0), top)]
     bct = []
 
-    # x1, y1 = np.split(V.tabulate_dof_coordinates(), 2, 1)
-    # x2, y2 = np.split(T.tabulate_dof_coordinates(), 2, 1)
-    # plt.plot(x1, y1, "go")
-    # plt.plot(x2, y2, "r.")
-    # plt.show()
     # set initial temp: 500°C  y=0, 800°C at y=1
     x, y = np.split(T.tabulate_dof_coordinates(), 2, 1)
-    t_1.vector().vec().array = (1.0 - y.ravel())*100 + 700
+    u_1.vector().vec().array[:] = 1e-6
+    u_k.vector().vec().array[:] = 1e-6
+    p_.vector().vec().array[:] = -rho(750)*g*y.ravel()
+    p_1.vector().vec().array[:] = -rho(750)*g*y.ravel()
+    t_1.vector().vec().array = (y.ravel())*100 + 700
     t_.assign(t_1)
-    mu_.vector().vec().array = mu(t_1.vector().vec().array, mu_solid)
-    rho_.vector().vec().array = rho(t_1.vector().vec().array)
+    mu_k.vector().vec().array = mu(t_1.vector().vec().array, mu_solid)
+    rho_k.vector().vec().array = rho(t_1.vector().vec().array)
+    rho_1.vector().vec().array = rho(t_1.vector().vec().array)
 
     n = df.FacetNormal(mesh)
 
     # implicit:
-    u_mid = (u + u_1) / 2.0  # Crank-Nicolson
-    acceleration = rho_*inner((u-u_1)/dt, vu) * dx
-    convection = rho_*dot(dot(u_mid, nabla_grad(u_k)), vu) * dx
-    diffusion = mu_*inner(grad(u_mid), grad(vu))*dx - mu_*dot(nabla_grad(u_mid)*n, vu)*ds  # integrated by parts
-    pressure = -inner(p_1, div(vu))*dx + dot(p_1*n, vu)*ds  # integrated by parts
-    body_force = dot(df.Constant((0.0, -g))*rho_, vu)*dx + dot(df.Constant((0.0, 0.0)), vu) * ds
-    body_force = dot(df.Constant((0.0, -g))*1, vu)*dx + dot(df.Constant((0.0, 0.0)), vu) * ds
-    F1 = acceleration + convection + diffusion + pressure + body_force
+    acceleration = inner((rho_k*u - rho_1*u_1)/dt, vu) * dx
+    convection = dot(div(rho_k*outer(u_k, u)), vu) * dx
+    pressure = inner(p_1, div(vu))*dx - dot(p_1*n, vu)*ds  # integrated by parts
+    diffusion = -inner(mu_k * (grad(u) + grad(u).T), grad(vu))*dx \
+                + dot(mu_k * (grad(u) + grad(u).T)*n, vu)*ds  # integrated by parts
+    body_force = dot(df.Constant((0.0, -g))*rho_k, vu)*dx \
+               + dot(df.Constant((0.0, 0.0)), vu) * ds
+    F1 = -acceleration - convection + diffusion + pressure + body_force
+    a1, L1 = df.lhs(F1), df.rhs(F1)
 
-    a1 = df.lhs(F1)
-    L1 = df.rhs(F1)
     # Define variational problem for step 2
-    a2 = dot(nabla_grad(p), nabla_grad(vp))*dx
-    L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (1/dt)*div(u_)*vp*dx
-    L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (1*rho_/dt)*div(u_)*vp*dx
-    # Define variational problem for step 3
-    a3 = dot(u, vu)*dx
-    L3 = dot(u_, vu)*dx - (dt/1)*dot(nabla_grad(p_ - p_1), vu)*dx
-    L3 = dot(u_, vu)*dx - (dt/(1*rho_))*dot(nabla_grad(p_ - p_1), vu)*dx
+    F2 = rho_k / dt * dot(div(u_), vp) * dx + dot(grad(p-p_1), grad(vp)) * dx  # grad(p-p_1)/2 * grad(vp) * dx does not work
+    a2, L2 = df.lhs(F2), df.rhs(F2)
+
+    # Define variational problem for step 3, where u_ = u* from step 1
+    F3 = -rho_k / dt * dot(u-u_, vu) * dx - dot(grad(p_-p_1), vu) * dx
+    a3, L3 = df.lhs(F3), df.rhs(F3)
+
     # Step 4: Transport of rho / Convection-diffusion and SUPG
     # vr = vr + tau_SUPG * inner(u_, grad(vr))  # SUPG stabilization
-    t_mid = (t + t_1) / 2.0
-    # l2 see F1, u_ -> u_1
-    F4 = dot((t - t_1) / dt, vt) * dx \
-        + dot(dot(u_, grad(t_mid)),  vt) * dx \
-        + D*dot(grad(t_mid), grad(vt)) * dx  # see F1, mu -> D
-    # F4 += beta * dot(dot(u_, grad(r_mid)), dot(u_, grad(vr))) * dx
+    # F4 = dot((t - t_1) / dt, vt)*dx + dot(div(t*u_), vt) * dx       + D*dot(grad(t), grad(vt)) * dx
+    # above does not work, below works fine, but is mathematically not correct, since d/dt (rho) is not 0
+    F4 = dot((t - t_1) / dt, vt)*dx + dot(dot(grad(t), u_), vt)*dx \
+        + D*dot(grad(t), grad(vt)) * dx
+    a4, L4 = df.lhs(F4), df.rhs(F4)
+
     # Robin BC: HT on the walls. ht coefficient k is arbitray
     t_amb, t_feeder = 100., 800.
-    k_top, k_lft, k_btm, k_rgt = np.array([1e-3, 3.33e-4, 3.33e-4, 3.33e-4])
-    F4 += k_top*(t_mid - t_feeder)*vt*ds_(1)
-    F4 += k_lft*(t_mid - t_amb)*vt*ds_(2)
-    F4 += k_btm*(t_mid - t_amb)*vt*ds_(3)
-    F4 += k_rgt*(t_mid - t_amb)*vt*ds_(4)
-    a4 = df.lhs(F4)
-    L4 = df.rhs(F4)
+    k_top, k_lft, k_btm, k_rgt = (1e-3, 3.33e-4, 3.33e-4, 3.33e-4)
+    F4 += k_top*(t - t_feeder)*vt*ds_(1)
+    F4 += k_lft*(t - t_amb)*vt*ds_(2)
+    F4 += k_btm*(t - t_amb)*vt*ds_(3)
+    F4 += k_rgt*(t - t_amb)*vt*ds_(4)
+
     # Assemble matrices
     A1 = df.assemble(a1)
     A2 = df.assemble(a2)
@@ -129,56 +126,64 @@ def navier_stokes_IPCS_cavity(mesh, dt, parameter):
     # Apply boundary conditions to matrices
     [bc.apply(A1) for bc in bcu]
     [bc.apply(A2) for bc in bcp]
-    return (u_1, p_1, t_1, mu_, rho_, u_, p_, t_, u_k, D,
+    [bc.apply(A3) for bc in bcu]
+    return (u_1, p_1, t_1, mu_k, rho_k, u_, p_, t_, u_k, D,
             L1, a1, L2, A2, L3, A3, L4, a4, bcu, bcp, bct)
 
 
-def solve_timestep(u_1, p_1, t_1, mu_, rho_, u_, p_, t_, u_k, D,
+def solve_timestep(u_1, p_1, t_1, mu_k, rho_k, u_, p_, t_, u_k, D,
                    L1, a1, L2, A2, L3, A3, L4, a4, bcu, bcp, bct):
     assemble = df.assemble
     solve = df.solve
     # Step 1: Tentative velocity step
-    for k in range(3):
+    for k in range(4):
         A1 = assemble(a1)   # needs to be reassembled because viscosity changed!
-        [bc.apply(A1) for bc in bcu]
         b1 = assemble(L1)
+        [bc.apply(A1) for bc in bcu]
         [bc.apply(b1) for bc in bcu]
         solve(A1, u_.vector(), b1, 'bicgstab', 'hypre_amg')
         # res = np.sum((u_k.compute_vertex_values(mesh) - u_.compute_vertex_values(mesh))**2)
         # print(k, res)
-        u_k.assign(u_)
-    # Step 2: Pressure correction step
-    b2 = assemble(L2)
-    [bc.apply(b2) for bc in bcp]
-    solve(A2, p_.vector(), b2, 'bicgstab', 'hypre_amg')
-    # Step 3: Velocity correction step
-    b3 = assemble(L3)
-    solve(A3, u_.vector(), b3, 'cg', 'sor')
-    # Step 4: Transport of T
-    A4 = assemble(a4)
-    b4 = assemble(L4)
-    [bc.apply(A4) for bc in bct]
-    [bc.apply(b4) for bc in bct]
-    solve(A4, t_.vector(), b4, 'gmres', 'hypre_amg')
-    # # HTF
-    # T = df.FunctionSpace(mesh, 'P', 1)
-    # t_ = df.Function(T)
-    # X = T.tabulate_dof_coordinates()
-    # left(X.T, ~np.isnan(X[:, 0]))
-    # dT_temporal = t_.vector().vec().array - t_1.vector().vec().array
-    # dT_spacial = t_.vector().vec().array - 25.
-    # h = df.CellDiameter(mesh)
-    # q = k*A * dT
-    # x, y = np.split(T.tabulate_dof_coordinates(), 2, 1)
+        # plot_upt(mesh, (u_, p_, t_1, mu_k, rho_k))
+        # plt.suptitle(1)
+        # plt.show()
+        # Step 2: Pressure correction step
+        b2 = assemble(L2)
+        [bc.apply(b2) for bc in bcp]
+        solve(A2, p_.vector(), b2, 'bicgstab', 'hypre_amg')
+        # plot_upt(mesh, (u_, p_, t_1, mu_k, rho_k))
+        # plt.suptitle(2)
+        # plt.show()
+        # Step 3: Velocity correction step
+        b3 = assemble(L3)
+        [bc.apply(b3) for bc in bcu]
+        solve(A3, u_.vector(), b3, 'cg', 'sor')
+        # plot_upt(mesh, (u_, p_, t_1, mu_k, rho_k))
+        # plt.suptitle(3)
+        # plt.show()
+        # Step 4: Transport of T
+        A4 = assemble(a4)
+        b4 = assemble(L4)
+        [bc.apply(A4) for bc in bct]
+        [bc.apply(b4) for bc in bct]
+        solve(A4, t_.vector(), b4, 'gmres', 'hypre_amg')
 
+        u_k.assign(u_)
+        mu_k.vector().vec().array = mu(t_.vector().vec().array, mu_solid)
+        rho_k.vector().vec().array = rho(t_.vector().vec().array)
+
+        # plot_upt(mesh, (u_k, p_, t_, mu_k, rho_k))
+    #     plt.suptitle(4)
+    #     plt.show()
+    # asd
     # Update previous solution
     u_1.assign(u_)
     p_1.assign(p_)
     t_1.assign(t_)
-    mu_.vector().vec().array = mu(t_1.vector().vec().array, mu_solid)
-    rho_.vector().vec().array = rho(t_1.vector().vec().array)
-
-    return u_1, p_1, t_1, mu_, rho_
+    # plot_upt(mesh, (u_, p_, t_, mu_k, rho_k))
+    # plt.suptitle(4)
+    # plt.show()
+    return u_1, p_1, t_1, mu_k, rho_k
 
 
 def cavity(lcar, L):
@@ -251,8 +256,7 @@ def plot_upt(mesh, res):
                          vmin=mu(800, .1), vmax=mu(600, .1), cmap=cmap_r)
     c5 = ax5.tricontourf(x, y, tri, density, levels=40,
                          vmin=rho(800.), vmax=rho(600.), cmap=cmap_r)
-    plt.colorbar(c2, ax=ax2,
-                 ticks=[pressure.min(), pressure.max()])
+    plt.colorbar(c2, ax=ax2)
     plt.colorbar(c3, ax=ax3,
                  ticks=[temperature.min(), temperature.max()])
     plt.colorbar(c4, ax=ax4,
@@ -277,12 +281,12 @@ def plot_upt(mesh, res):
 
 def rho(T):
     # print("rho: ", np.min(T), np.max(T))
-    return rho_Al(T)#*1e-3
+    return rho_Al(T)
 
 
 def mu(T, mu_solid):
     # print("mu: ", np.min(T), np.max(T))
-    return mu_Al(T, mu_solid)#*1e3
+    return mu_Al(T, mu_solid)
 
 
 def rho_Al(T):
@@ -350,17 +354,17 @@ def mu_Al(T, mu_solid):
 
 
 if __name__ == "__main__":
-    cfl = .05
+    # cfl = .05
     # T_end = 4000
     # N = int((T_end/dt) // 1)
-    dt = .1
+    dt = .01
     N = 6000
 
     L = 1.0
     mesh = cavity(.02, L)
     df.plot(mesh)
-    Re = 40
-    D = 0.001  # diffusion coeff.
+    Re = .4
+    D = 1e-3  # diffusion coeff.
 
     for mu_solid in np.array([100., 200, 500, 1000, 1500])/1000:
         U0 = (Re/(rho(700)*L)*mu(700, mu_solid))[0]

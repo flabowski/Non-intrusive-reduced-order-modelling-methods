@@ -67,7 +67,7 @@ def navier_stokes_IPCS(VQ, mesh, bcs, dt, parameter):
     L1 = rhs(F1)
     # Define variational problem for step 2
     a2 = dot(nabla_grad(p), nabla_grad(vp))*dx
-    L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (1/dt)*div(u_)*vp*dx
+    L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (rho/dt)*div(u_)*vp*dx  # rho missing in FEniCS tutorial
     # Define variational problem for step 3
     a3 = dot(u, vu)*dx
     L3 = dot(u_, vu)*dx - dt*dot(nabla_grad(p_ - p_1), vu)*dx
@@ -128,7 +128,7 @@ def cylinder(lcar):
         # s = [geom.add_plane_surface(ll1)]
         geom.add_surface_loop(s)
         msh = geom.generate_mesh()
-    mesh = create2Dmesh(msh)
+    mesh = create2Dmesh(msh, 1)
     return mesh
 
 
@@ -190,11 +190,12 @@ if __name__ == "__main__":
     L = .1
 
     Re = 20.0
-    for Re in [20, 50, 75, 100, 150, 200]:
+    for Re in [55, 65]: #, 20, 50, 60, 75, 100, 150, 200]:
         mu = rho*U_mean*L/Re
         nu = mu/rho
         parameter = [mu, rho, nu]
         my_dir = "../doc/mu({:.4f})/".format(mu)
+        print(Re, my_dir)
 
         print(dt)
         print("Re set to: ", rho*U_mean*L/mu)
