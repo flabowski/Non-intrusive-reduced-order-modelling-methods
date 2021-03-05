@@ -364,7 +364,7 @@ if __name__ == "__main__":
     mesh = cavity(.02, L)
     df.plot(mesh)
     Re = .4
-    D = 1e-3  # diffusion coeff.
+    D = 1e-2  # diffusion coeff.
 
     for mu_solid in np.array([100., 200, 500, 1000, 1500])/1000:
         U0 = (Re/(rho(700)*L)*mu(700, mu_solid))[0]

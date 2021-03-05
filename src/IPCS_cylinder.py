@@ -19,13 +19,20 @@ from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
 from common import time_stepping, create2Dmesh, sigma, epsilon
 
 
-def setup_cylinder_problem(mesh, U0, coupled=True):
+# def setup_cylinder_problem(mesh, U0, coupled=True):
+#     """
+#     fenics code: build function space and define boundary conditions (bc).
+#     """
+#     return VQ, bcs, ds_
+
+
+def navier_stokes_IPCS(mesh, dt, parameter):
     """
-    fenics code: build function space and define boundary conditions (bc).
+    fenics code: weak form of the problem.
     """
+    mu, rho, nu = parameter
     V = VectorFunctionSpace(mesh, 'P', 2)
     Q = FunctionSpace(mesh, 'P', 1)
-    VQ = (V, Q)
 
     bc0 = DirichletBC(V, Constant((0, 0)), cylinderwall)
     bc1 = DirichletBC(V, Constant((0, 0)), topandbottom)
@@ -41,15 +48,7 @@ def setup_cylinder_problem(mesh, U0, coupled=True):
     ASD1.mark(mf, 1)
     ASD2.mark(mf, 2)
     ds_ = ds(subdomain_data=mf, domain=mesh)
-    return VQ, bcs, ds_
 
-
-def navier_stokes_IPCS(VQ, mesh, bcs, dt, parameter):
-    """
-    fenics code: weak form of the problem.
-    """
-    mu, rho, nu = parameter
-    V, Q = VQ
     vu, vp = TestFunction(V), TestFunction(Q)  # for integration
     u_, p_ = Function(V), Function(Q)  # for the solution
     u_1, p_1 = Function(V), Function(Q)  # for the prev. solution
@@ -153,7 +152,7 @@ def outlet(x, on_boundary):
 
 
 def plot_up(mesh, res):
-    u, p = res
+    u, p = res[0], res[1]
     w0 = u.compute_vertex_values(mesh)
     w0.shape = (2, -1)
     magnitude = np.linalg.norm(w0, axis=0)
@@ -175,13 +174,13 @@ def plot_up(mesh, res):
 
 
 if __name__ == "__main__":
-    cfl = .01
+    cfl = .05
     T = 8
     rho = 1.
     U_m = .3
     U_m = 1.5
     U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
-    mesh = cylinder(.01)
+    mesh = cylinder(.02)
     U0 = Expression((U0_str, "0"), U_m=U_m, degree=2)
     x = [0, .41/2]  # evaluate the Expression at the center of the channel
     U_mean = 2/3*eval(U0_str)
@@ -189,8 +188,8 @@ if __name__ == "__main__":
     N = int((T/dt) // 1)
     L = .1
 
-    Re = 20.0
-    for Re in [55, 65]: #, 20, 50, 60, 75, 100, 150, 200]:
+    # Re = 20.0
+    for Re in [100, 20, 55, 65]: #, 20, 50, 60, 75, 100, 150, 200]:
         mu = rho*U_mean*L/Re
         nu = mu/rho
         parameter = [mu, rho, nu]
@@ -206,10 +205,13 @@ if __name__ == "__main__":
         print("Unknowns: ", mesh.num_edges())
         print("coordinates: ", len(mesh.coordinates()))
 
-        VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
+        # VQ, bcs, ds_ = setup_cylinder_problem(mesh, U0, coupled=False)
         tic = timeit.default_timer()
-        time_stepping(mesh, VQ, bcs, ds_, N, dt, parameter,
-                      navier_stokes_IPCS, solve_timestep, plot_up, my_dir)
+        scheme = navier_stokes_IPCS
+        solver = solve_timestep
+        time_stepping(mesh, N, dt, parameter, scheme, solver, plot_up, my_dir)
+        # time_stepping(mesh, VQ, bcs, ds_, N, dt, parameter,
+        #               navier_stokes_IPCS, solve_timestep, plot_up, my_dir)
         toc = timeit.default_timer()
 
         print("time IPCS:", toc-tic)
