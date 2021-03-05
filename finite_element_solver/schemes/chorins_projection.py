@@ -32,12 +32,22 @@ class ImplicitTentativeVelocityStep():
         n = FacetNormal(domain.mesh)
         acceleration = rho*inner((u-u_1)/dt, vu) * dx
         convection = dot(div(rho*outer(u_k, u)), vu) * dx
+        convection = rho*dot(dot(u_k, nabla_grad(u)), vu) * dx
         pressure = (inner(p_1, div(vu))*dx - dot(p_1*n, vu)*ds)
         diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu))*dx)  # good
         # diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu))*dx
-        #              + dot(mu * (grad(u) + grad(u).T)*n, vu)*ds)  # very slow!
+        #               + dot(mu * (grad(u) + grad(u).T)*n, vu)*ds)  # very slow!
 
-        F_impl = acceleration + convection + pressure + diffusion
+        # F_impl = acceleration + convection + pressure + diffusion
+
+        # dot(u_1, nabla_grad(u_1)) works
+        # dot(u, nabla_grad(u_1)) does not change!
+        u_mid = (u + u_1) / 2.0
+        F_impl = rho*dot((u - u_1) / dt, vu)*dx \
+            + rho*dot(dot(u_1, nabla_grad(u_1)), vu)*dx \
+            + inner(sigma(u_mid, p_1, mu), epsilon(vu))*dx \
+            + dot(p_1*n, vu)*ds - dot(mu*nabla_grad(u_mid)*n, vu)*ds
+
         self.a, self.L = lhs(F_impl), rhs(F_impl)
         self.domain = domain
         self.A = assemble(self.a)
