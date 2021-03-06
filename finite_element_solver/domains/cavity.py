@@ -9,11 +9,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pygmsh
 import matplotlib as mpl
-from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
-    dx, Function, DirichletBC, Expression, solve, lhs, rhs, TestFunction, ds, \
-    TrialFunction, dot, nabla_grad, split, errornorm, Mesh, MeshEditor, \
-    AutoSubDomain, MeshFunction, FacetNormal, assemble, Identity, \
-    project, FunctionSpace, sym, Constant, TestFunctions, VectorFunctionSpace
+from dolfin import (Function, DirichletBC, Expression, TestFunction, ds,
+                    TrialFunction, Mesh, MeshEditor, AutoSubDomain,
+                    MeshFunction, FunctionSpace, Constant, VectorFunctionSpace)
 
 
 class CavityMesh():

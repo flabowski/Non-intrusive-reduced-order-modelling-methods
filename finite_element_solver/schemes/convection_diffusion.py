@@ -6,7 +6,7 @@ Created on Thu Mar  4 11:30:48 2021
 @author: florianma
 
 """
-from dolfin import (dx, solve, lhs, rhs, dot, assemble,  grad)
+from dolfin import (dx, solve, lhs, rhs, dot, assemble, grad)
 
 
 class ConvectionDiffusion():
@@ -19,7 +19,7 @@ class ConvectionDiffusion():
         # vr = vr + tau_SUPG * inner(u_, grad(vr))  # SUPG stabilization
         # F4 = dot((t - t_1) / dt, vt)*dx + dot(div(t*u_), vt) * dx       + D*dot(grad(t), grad(vt)) * dx
         # above does not work, below works fine, but is mathematically not correct, since d/dt (rho) is not 0
-        F = dot((t - t_1) / dt, vt)*dx + dot(dot(grad(t), u_), vt)*dx \
+        F = dot((t - t_1) / dt, vt)*dx + dot(dot(grad(t), u_), vt) * dx \
             + D*dot(grad(t), grad(vt)) * dx + boundary_terms
 
         a, L = lhs(F), rhs(F)
