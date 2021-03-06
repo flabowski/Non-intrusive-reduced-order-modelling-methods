@@ -22,7 +22,7 @@ export CC=mpicc && \
 export HDF5_DIR=/usr/lib/x86_64-linux-gnu/hdf5/mpich/ && \
 pip3 install --no-binary=h5py h5py meshio pygmsh --user && \
 echo "alias gmsh=/usr/local/lib/python3.6/site-packages/gmsh-4.8.0-Linux64-sdk/bin/gmsh" >> ~/.bashrc && \
-export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python3.6/site-packages/gmsh-4.8.0-Linux64-sdk/lib/ && \
+echo "export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python3.6/site-packages/gmsh-4.8.0-Linux64-sdk/lib/" >> ~/.bashrc && \
 exec bash && \
 pip3 install tqdm --user
 ```
@@ -45,7 +45,7 @@ export CC=mpicc && \
 export HDF5_DIR="/usr/lib/x86_64-linux-gnu/hdf5/openmpi/" && \
 pip3 install --no-binary=h5py h5py meshio pygmsh && \
 echo "alias gmsh=/usr/local/lib/python3.8/site-packages/gmsh-4.8.0-Linux64-sdk/bin/gmsh" >> ~/.bashrc && \
-export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python3.8/site-packages/gmsh-4.8.0-Linux64-sdk/lib/ && \
+echo "export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python3.8/site-packages/gmsh-4.8.0-Linux64-sdk/lib/" >> ~/.bashrc && \
 exec bash  && \
 pip3 install tqdm
 ```
