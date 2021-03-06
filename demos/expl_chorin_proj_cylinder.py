@@ -30,9 +30,11 @@ def test():
     dt = cfl * my_domain.mesh.hmin() / my_domain.U_mean
     my_parameters["dt [s]"] = dt
 
-    tvs = TentativeVelocityStep(my_parameters, my_domain)
     ps = PressureStep(my_parameters, my_domain)
     vcs = VelocityCorrectionStep(my_parameters, my_domain)
+    tvs = TentativeVelocityStep(my_parameters, my_domain)
+    tvs = ImplicitTentativeVelocityStep(my_parameters, my_domain)
+    tvs = ExplicitTentativeVelocityStep(my_parameters, my_domain)
 
     my_mesh.plot()
     plt.show()
