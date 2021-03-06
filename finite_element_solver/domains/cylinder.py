@@ -10,14 +10,6 @@ import dolfin as df
 import matplotlib.pyplot as plt
 import numpy as np
 import pygmsh
-<<<<<<< HEAD
-from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
-    dx, Function, DirichletBC, Expression, solve, lhs, rhs, TestFunction, ds, \
-    TrialFunction, dot, nabla_grad, split, errornorm, Mesh, MeshEditor, \
-    AutoSubDomain, MeshFunction, FacetNormal, assemble, Identity, \
-    project, FunctionSpace, sym, Constant, TestFunctions, VectorFunctionSpace
-=======
->>>>>>> 594981552cb3a1ae9adf5a4ec030cc733820fcca
 
 
 class CylinderMesh():
@@ -92,19 +84,19 @@ class CylinderDomain():
         V = df.VectorFunctionSpace(mesh, 'P', 2)
         Q = df.FunctionSpace(mesh, 'P', 1)
         self.mesh = mesh
-        self.rho = Constant(parameters["density [kg/m3]"])
-        self.mu = Constant(parameters["viscosity [Pa*s]"])
-        self.dt = Constant(parameters["dt [s]"])
+        self.rho = df.Constant(parameters["density [kg/m3]"])
+        self.mu = df.Constant(parameters["viscosity [Pa*s]"])
+        self.dt = df.Constant(parameters["dt [s]"])
         self.g = 0.0
-        self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)  # for integration
-        self.u_, self.p_ = df.Function(V), df.Function(Q)  # for the solution
-        self.u_1, self.p_1 = df.Function(V), df.Function(Q)  # for the prev. solution
-        self.u_k, self.p_k = df.Function(V), df.Function(Q)  # for the prev. solution
+        self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)
+        self.u_, self.p_ = df.Function(V), df.Function(Q)
+        self.u_1, self.p_1 = df.Function(V), df.Function(Q)
+        self.u_k, self.p_k = df.Function(V), df.Function(Q)
         self.u, self.p = df.TrialFunction(V), df.TrialFunction(Q)  # unknown!
 
         U_m = parameters["velocity [m/s]"]
         U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
-        x = [0, .41 / 2]  # noqa: F841  # evaluate the Expression at the center of the channel
+        x = [0, .41 / 2]  # center of the channel
         self.U_mean = np.mean(2 / 3 * eval(U0_str))
 
         U0 = df.Expression((U0_str, "0"), U_m=U_m, degree=2)
@@ -137,7 +129,8 @@ class CylinderDomain():
         pressure = p.compute_vertex_values(mesh)
         # print(x.shape, y.shape, u.shape, v.shape)
 
-        fig, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True, figsize=(12, 6))
+        fig, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True,
+                                       figsize=(12, 6))
         ax1.quiver(x, y, u, v, magnitude)
         ax2.tricontourf(x, y, tri, pressure, levels=40)
         ax1.set_aspect("equal")

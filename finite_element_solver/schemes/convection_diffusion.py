@@ -6,8 +6,7 @@ Created on Thu Mar  4 11:30:48 2021
 @author: florianma
 
 """
-from dolfin import (inner, div, dx, solve, lhs, rhs, ds, dot, nabla_grad,
-                    FacetNormal, assemble, sym, Identity, Constant, grad)
+from dolfin import (dx, solve, lhs, rhs, dot, assemble,  grad)
 
 
 class ConvectionDiffusion():
