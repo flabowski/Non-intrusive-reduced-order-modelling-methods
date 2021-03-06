@@ -7,10 +7,8 @@ Created on Thu Mar  4 10:51:13 2021
 """
 import numpy as np
 import dolfin as df
-import os
 import matplotlib.pyplot as plt
 import pygmsh
-from tqdm import trange  # Progress bar
 from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
     dx, Function, DirichletBC, Expression, solve, lhs, rhs, TestFunction, ds, \
     TrialFunction, dot, nabla_grad, split, errornorm, Mesh, MeshEditor, \
@@ -85,7 +83,7 @@ class CylinderMesh():
 
 
 class CylinderDomain():
-    def __init__(self, U_m, mesh):
+    def __init__(self, parameters, mesh):
         """Function spaces and BCs"""
         V = VectorFunctionSpace(mesh, 'P', 2)
         Q = FunctionSpace(mesh, 'P', 1)
@@ -95,7 +93,12 @@ class CylinderDomain():
         self.u_1, self.p_1 = Function(V), Function(Q)  # for the prev. solution
         self.u_k, self.p_k = Function(V), Function(Q)  # for the prev. solution
         self.u, self.p = TrialFunction(V), TrialFunction(Q)  # unknown!
+        self.rho = Constant(parameters["density [kg/m3]"])
+        self.mu = Constant(parameters["viscosity [Pa*s]"])
+        self.dt = Constant(parameters["dt [s]"])
+        self.g = 0.0
 
+        U_m = parameters["velocity [m/s]"]
         U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
         x = [0, .41 / 2]  # evaluate the Expression at the center of the channel
         self.U_mean = np.mean(2 / 3 * eval(U0_str))
@@ -173,4 +176,4 @@ def outlet(x, on_boundary):
 
 
 if __name__ == "__main__":
-    print(3.1415)
+    pass
