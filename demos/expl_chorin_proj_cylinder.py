@@ -27,7 +27,7 @@ def test():
     my_domain = CylinderDomain(my_parameters["velocity [m/s]"], my_mesh.mesh)
 
     cfl = .05
-    dt = cfl*my_domain.mesh.hmin()/my_domain.U_mean
+    dt = cfl * my_domain.mesh.hmin() / my_domain.U_mean
     my_parameters["dt [s]"] = dt
 
     ps = PressureStep(my_parameters, my_domain)
@@ -43,7 +43,7 @@ def test():
     U = my_domain.U_mean
     L = my_parameters["characteristic length [m]"]
     mu = my_parameters["viscosity [Pa*s]"]
-    Re = rho*U*L/mu
+    Re = rho * U * L / mu
     print("Re = ", Re)
     print("rho = ", rho)
     print("mu = ", mu)
