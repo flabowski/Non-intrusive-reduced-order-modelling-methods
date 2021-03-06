@@ -21,6 +21,10 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: 3.9
+    - name: Lint with flake8
+      run: |
+        pip3 install flake8 pytest
+        flake8 finite_element_solver
     - name: Install dependencies
       run: |
        DEBIAN_FRONTEND=noninteractive apt-get update -qq
@@ -35,10 +39,6 @@ jobs:
        pip3 install --no-binary=h5py h5py meshio pygmsh
        export PYTHONPATH=$PYTHONPATH:/usr/local/lib/python3.8/site-packages/gmsh-4.8.0-Linux64-sdk/lib/
        pip3 install tqdm
-       pip3 install flake8 pytest
-    - name: Lint with flake8
-      run: |
-        python3 -m flake8 finite_element_solver
     - name: Test with pytest
       run: |
         pip3 install .
