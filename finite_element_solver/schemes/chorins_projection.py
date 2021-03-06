@@ -18,7 +18,7 @@ def epsilon(u):
 
 def sigma(u, p, mu):
     # Define stress tensor
-    return 2*mu*epsilon(u) - p*Identity(len(u))
+    return 2 * mu * epsilon(u) - p * Identity(len(u))
 
 
 class ImplicitTentativeVelocityStep():
@@ -30,11 +30,11 @@ class ImplicitTentativeVelocityStep():
         p_1 = domain.p_1
 
         n = FacetNormal(domain.mesh)
-        acceleration = rho*inner((u-u_1)/dt, vu) * dx
-        convection = dot(div(rho*outer(u_k, u)), vu) * dx
-        convection = rho*dot(dot(u_k, nabla_grad(u)), vu) * dx
-        pressure = (inner(p_1, div(vu))*dx - dot(p_1*n, vu)*ds)
-        diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu))*dx)  # good
+        acceleration = rho * inner((u - u_1) / dt, vu) * dx
+        convection = dot(div(rho * outer(u_k, u)), vu) * dx
+        convection = rho * dot(dot(u_k, nabla_grad(u)), vu) * dx
+        pressure = (inner(p_1, div(vu)) * dx - dot(p_1 * n, vu) * ds)
+        diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu)) * dx)  # good
         # diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu))*dx
         #               + dot(mu * (grad(u) + grad(u).T)*n, vu)*ds)  # very slow!
 
@@ -43,10 +43,10 @@ class ImplicitTentativeVelocityStep():
         # dot(u_1, nabla_grad(u_1)) works
         # dot(u, nabla_grad(u_1)) does not change!
         u_mid = (u + u_1) / 2.0
-        F_impl = rho*dot((u - u_1) / dt, vu)*dx \
-            + rho*dot(dot(u_1, nabla_grad(u_1)), vu)*dx \
-            + inner(sigma(u_mid, p_1, mu), epsilon(vu))*dx \
-            + dot(p_1*n, vu)*ds - dot(mu*nabla_grad(u_mid)*n, vu)*ds
+        F_impl = rho * dot((u - u_1) / dt, vu) * dx \
+            + rho * dot(dot(u_1, nabla_grad(u_1)), vu) * dx \
+            + inner(sigma(u_mid, p_1, mu), epsilon(vu)) * dx \
+            + dot(p_1 * n, vu) * ds - dot(mu * nabla_grad(u_mid) * n, vu) * ds
 
         self.a, self.L = lhs(F_impl), rhs(F_impl)
         self.domain = domain
@@ -76,11 +76,11 @@ class ExplicitTentativeVelocityStep():
         u, u_1, p_1, vu = domain.u, domain.u_1, domain.p_1, domain.vu
 
         n = FacetNormal(domain.mesh)
-        acceleration = rho*inner((u-u_1)/dt, vu) * dx
-        convection = dot(div(rho*outer(u_1, u)), vu) * dx
-        diffusion = (-inner(mu * (grad(u_1) + grad(u_1).T), grad(vu))*dx
-                     + dot(mu * (grad(u_1) + grad(u_1).T)*n, vu)*ds)
-        pressure = inner(p_1, div(vu))*dx - dot(p_1*n, vu)*ds  # int. by parts
+        acceleration = rho * inner((u - u_1) / dt, vu) * dx
+        convection = dot(div(rho * outer(u_1, u)), vu) * dx
+        diffusion = (-inner(mu * (grad(u_1) + grad(u_1).T), grad(vu)) * dx
+                     + dot(mu * (grad(u_1) + grad(u_1).T) * n, vu) * ds)
+        pressure = inner(p_1, div(vu)) * dx - dot(p_1 * n, vu) * ds  # int. by parts
         # TODO: what is better?
         # convection = rho*dot(dot(u_1, nabla_grad(u_k)), vu) * dx
         # diffusion = (mu*inner(grad(u_1), grad(vu))*dx
@@ -110,9 +110,9 @@ class PressureStep():
         p_1, u_ = domain.p_1, domain.u_
 
         # F = rho/dt * dot(div(u_), vp) * dx + dot(grad(p-p_1), grad(vp)) * dx
-        self.a = dot(nabla_grad(p), nabla_grad(vp))*dx
-        self.L = (dot(nabla_grad(p_1), nabla_grad(vp))*dx
-                  - (rho/dt)*div(u_)*vp*dx)
+        self.a = dot(nabla_grad(p), nabla_grad(vp)) * dx
+        self.L = (dot(nabla_grad(p_1), nabla_grad(vp)) * dx
+                  - (rho / dt) * div(u_) * vp * dx)
         self.A = assemble(self.a)
         [bc.apply(self.A) for bc in domain.bcp]
         self.domain = domain
@@ -135,8 +135,8 @@ class VelocityCorrectionStep():
         u, u_, vu = domain.u, domain.u_, domain.vu
         p_1, p_ = domain.p_1, domain.p_
 
-        self.a = dot(u, vu)*dx
-        self.L = dot(u_, vu)*dx - dt/rho*dot(nabla_grad(p_ - p_1), vu)*dx
+        self.a = dot(u, vu) * dx
+        self.L = dot(u_, vu) * dx - dt / rho * dot(nabla_grad(p_ - p_1), vu) * dx
         self.A = assemble(self.a)
         [bc.apply(self.A) for bc in domain.bcu]
         self.domain = domain

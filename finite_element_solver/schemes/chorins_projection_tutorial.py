@@ -17,7 +17,7 @@ def epsilon(u):
 
 def sigma(u, p, mu):
     # Define stress tensor
-    return 2*mu*epsilon(u) - p*Identity(len(u))
+    return 2 * mu * epsilon(u) - p * Identity(len(u))
 
 
 class TentativeVelocityStep():
@@ -30,10 +30,10 @@ class TentativeVelocityStep():
 
         n = FacetNormal(domain.mesh)
         u_mid = (u + u_1) / 2.0
-        F1 = rho*dot((u - u_1) / dt, vu)*dx \
-            + rho*dot(dot(u_1, nabla_grad(u_1)), vu)*dx \
-            + inner(sigma(u_mid, p_1, mu), epsilon(vu))*dx \
-            + dot(p_1*n, vu)*ds - dot(mu*nabla_grad(u_mid)*n, vu)*ds
+        F1 = rho * dot((u - u_1) / dt, vu) * dx \
+            + rho * dot(dot(u_1, nabla_grad(u_1)), vu) * dx \
+            + inner(sigma(u_mid, p_1, mu), epsilon(vu)) * dx \
+            + dot(p_1 * n, vu) * ds - dot(mu * nabla_grad(u_mid) * n, vu) * ds
         a1 = lhs(F1)
         L1 = rhs(F1)
         A1 = assemble(a1)
@@ -60,8 +60,8 @@ class PressureStep():
         p, p_1, vp = domain.p, domain.p_1, domain.vp
         p_1, u_ = domain.p_1, domain.u_
 
-        a2 = dot(nabla_grad(p), nabla_grad(vp))*dx
-        L2 = dot(nabla_grad(p_1), nabla_grad(vp))*dx - (rho/dt)*div(u_)*vp*dx
+        a2 = dot(nabla_grad(p), nabla_grad(vp)) * dx
+        L2 = dot(nabla_grad(p_1), nabla_grad(vp)) * dx - (rho / dt) * div(u_) * vp * dx
         A2 = assemble(a2)
         [bc.apply(A2) for bc in domain.bcp]
 
@@ -86,8 +86,8 @@ class VelocityCorrectionStep():
         u, u_, vu = domain.u, domain.u_, domain.vu
         p_1, p_ = domain.p_1, domain.p_
 
-        a3 = dot(u, vu)*dx
-        L3 = dot(u_, vu)*dx - dt/rho*dot(nabla_grad(p_ - p_1), vu)*dx
+        a3 = dot(u, vu) * dx
+        L3 = dot(u_, vu) * dx - dt / rho * dot(nabla_grad(p_ - p_1), vu) * dx
         A3 = assemble(a3)
 
         self.a3, self.A3, self.L3 = a3, A3, L3
