@@ -5,17 +5,11 @@ Created on Thu Mar  4 10:51:13 2021
 
 @author: florianma
 """
-import numpy as np
+
 import dolfin as df
-import os
 import matplotlib.pyplot as plt
+import numpy as np
 import pygmsh
-from tqdm import trange  # Progress bar
-from dolfin import VectorElement, FiniteElement, Constant, inner, grad, div, \
-    dx, Function, DirichletBC, Expression, solve, lhs, rhs, TestFunction, ds, \
-    TrialFunction, dot, nabla_grad, split, errornorm, Mesh, MeshEditor, \
-    AutoSubDomain, MeshFunction, FacetNormal, assemble, Identity, \
-    project, FunctionSpace, sym, Constant, TestFunctions, VectorFunctionSpace
 
 
 class CylinderMesh():
@@ -87,34 +81,34 @@ class CylinderMesh():
 class CylinderDomain():
     def __init__(self, U_m, mesh):
         """Function spaces and BCs"""
-        V = VectorFunctionSpace(mesh, 'P', 2)
-        Q = FunctionSpace(mesh, 'P', 1)
+        V = df.VectorFunctionSpace(mesh, 'P', 2)
+        Q = df.FunctionSpace(mesh, 'P', 1)
         self.mesh = mesh
-        self.vu, self.vp = TestFunction(V), TestFunction(Q)  # for integration
-        self.u_, self.p_ = Function(V), Function(Q)  # for the solution
-        self.u_1, self.p_1 = Function(V), Function(Q)  # for the prev. solution
-        self.u_k, self.p_k = Function(V), Function(Q)  # for the prev. solution
-        self.u, self.p = TrialFunction(V), TrialFunction(Q)  # unknown!
+        self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)  # for integration
+        self.u_, self.p_ = df.Function(V), df.Function(Q)  # for the solution
+        self.u_1, self.p_1 = df.Function(V), df.Function(Q)  # for the prev. solution
+        self.u_k, self.p_k = df.Function(V), df.Function(Q)  # for the prev. solution
+        self.u, self.p = df.TrialFunction(V), df.TrialFunction(Q)  # unknown!
 
         U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
-        x = [0, .41 / 2]  # evaluate the Expression at the center of the channel
+        x = [0, .41 / 2]  # noqa: F841  # evaluate the Expression at the center of the channel
         self.U_mean = np.mean(2 / 3 * eval(U0_str))
 
-        U0 = Expression((U0_str, "0"), U_m=U_m, degree=2)
-        bc0 = DirichletBC(V, Constant((0, 0)), cylinderwall)
-        bc1 = DirichletBC(V, Constant((0, 0)), topandbottom)
-        bc2 = DirichletBC(V, U0, inlet)
-        bc3 = DirichletBC(Q, Constant(0), outlet)
+        U0 = df.Expression((U0_str, "0"), U_m=U_m, degree=2)
+        bc0 = df.DirichletBC(V, df.Constant((0, 0)), cylinderwall)
+        bc1 = df.DirichletBC(V, df.Constant((0, 0)), topandbottom)
+        bc2 = df.DirichletBC(V, U0, inlet)
+        bc3 = df.DirichletBC(Q, df.Constant(0), outlet)
         self.bcu = [bc0, bc1, bc2]
         self.bcp = [bc3]
         # ds is needed to compute drag and lift.
-        ASD1 = AutoSubDomain(topandbottom)
-        ASD2 = AutoSubDomain(cylinderwall)
-        mf = MeshFunction("size_t", mesh, 1)
+        ASD1 = df.AutoSubDomain(topandbottom)
+        ASD2 = df.AutoSubDomain(cylinderwall)
+        mf = df.MeshFunction("size_t", mesh, 1)
         mf.set_all(0)
         ASD1.mark(mf, 1)
         ASD2.mark(mf, 2)
-        self.ds_ = ds(subdomain_data=mf, domain=mesh)
+        self.ds_ = df.Measure("ds", domain=mesh, subdomain_data=mf)
         return
 
     def plot(self):
@@ -130,8 +124,7 @@ class CylinderDomain():
         pressure = p.compute_vertex_values(mesh)
         # print(x.shape, y.shape, u.shape, v.shape)
 
-        fig, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True,
-                                       figsize=(12, 6))
+        fig, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True, figsize=(12, 6))
         ax1.quiver(x, y, u, v, magnitude)
         ax2.tricontourf(x, y, tri, pressure, levels=40)
         ax1.set_aspect("equal")
