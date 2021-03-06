@@ -23,10 +23,10 @@ jobs:
         python-version: 3.9
     - name: Install dependencies
       run: |
-       apt-get update -qq
-       apt-get install -y -qq software-properties-common python3-pip libglu1 libxrender1 libxft2 libxinerama1
-       add-apt-repository -y ppa:fenics-packages/fenics
-       apt install -y --no-install-recommends fenics
+       DEBIAN_FRONTEND=noninteractive apt-get update -qq
+       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq software-properties-common python3-pip libglu1 libxrender1 libxft2 libxinerama1
+       DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:fenics-packages/fenics
+       DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends fenics
        pip3 -q install --upgrade sympy
        pip3 install gmsh
        export HDF5_MPI="ON" 
