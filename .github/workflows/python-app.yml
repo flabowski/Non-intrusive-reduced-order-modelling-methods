@@ -24,7 +24,7 @@ jobs:
     - name: Lint with flake8
       run: |
        DEBIAN_FRONTEND=noninteractive apt-get update -qq
-       DEBIAN_FRONTEND=noninteractive apt-get install python3-pip
+       DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-pip
        pip3 install flake8 pytest
        flake8 finite_element_solver
     - name: Install dependencies
