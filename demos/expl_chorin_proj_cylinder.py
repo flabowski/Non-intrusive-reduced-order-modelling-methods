@@ -13,7 +13,7 @@ from finite_element_solver.schemes.chorins_projection import (
     VelocityCorrectionStep)
 from finite_element_solver.schemes.chorins_projection_tutorial import (
     TentativeVelocityStep, PressureStep, VelocityCorrectionStep)
-from mpi4py import MPI
+from dolfin import XDMFFile
 
 
 def test():
@@ -36,8 +36,8 @@ def test():
     ps = PressureStep(my_parameters, my_domain)
     vcs = VelocityCorrectionStep(my_parameters, my_domain)
     tvs = TentativeVelocityStep(my_parameters, my_domain)
-    # tvs = ImplicitTentativeVelocityStep(my_parameters, my_domain)
-    # tvs = ExplicitTentativeVelocityStep(my_parameters, my_domain)
+    tvs = ImplicitTentativeVelocityStep(my_parameters, my_domain)
+    tvs = ExplicitTentativeVelocityStep(my_parameters, my_domain)
 
     plot(my_domain.mesh)
     plt.show()
@@ -51,15 +51,17 @@ def test():
     print("rho = ", rho)
     print("mu = ", mu)
     print("dt = ", dt)
+    outfile = XDMFFile("u.xdmf")
+    append = False
     for n in trange(8000):
         tvs.solve()
-        exit()
-
         ps.solve()
         vcs.solve()
 
         my_domain.u_1.assign(my_domain.u_)
         my_domain.p_1.assign(my_domain.p_)
+        outfile.write_checkpoint(my_domain.u_, "u", n * dt, append=append)
+        append = True
         if (n % 100) == 0:
             fig, ax = my_domain.plot()
             plt.savefig("tst.png")

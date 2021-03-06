@@ -14,9 +14,11 @@ import meshio
 from mpi4py import MPI
 
 
-def create_entity_mesh(mesh, cell_type, prune_z=False):
+def create_entity_mesh(mesh, cell_type, prune_z=False, remove_unused_points=False):
     """
-    Given a meshio mesh, extract mesh and physical markers for a given entity
+    Given a meshio mesh, extract mesh and physical markers for a given entity.
+    We assume that all unused points are at the end of the mesh.points
+    (this happens when we use physical markers with pygmsh)
     """
     cells = mesh.get_cells_type(cell_type)
     try:
@@ -35,9 +37,16 @@ def create_entity_mesh(mesh, cell_type, prune_z=False):
         cell_entities = np.hstack(cell_entities)
         sorted = np.argsort(cell_entities)
         cell_data = np.hstack(cell_data)[sorted]
+    if remove_unused_points:
+        num_vertices = len(np.unique(cells.reshape(-1)))
+        # We assume that the mesh has been created with physical tags,
+        # then unused points are at the end of the array
+        points = mesh.points[:num_vertices]
+    else:
+        points = mesh.points
 
     # Create output mesh
-    out_mesh = meshio.Mesh(points=mesh.points, cells={cell_type: cells}, cell_data={"name_to_read": [cell_data]})
+    out_mesh = meshio.Mesh(points=points, cells={cell_type: cells}, cell_data={"name_to_read": [cell_data]})
     if prune_z:
         out_mesh.prune_z_0()
     return out_mesh
@@ -85,11 +94,12 @@ def create_channel_mesh(lcar):
         geom.add_physical(outlet, "4")
         cylinderwall = c[4:]
         geom.add_physical(cylinderwall, "2")
+        # When using physical markers, unused points are placed last in the mesh
         msh = geom.generate_mesh(dim=2)
 
     # Write mesh to XDMF which we can easily read into dolfin
     if MPI.COMM_WORLD.rank == 0:
-        meshio.write("mesh.xdmf", create_entity_mesh(msh, "triangle", True))
+        meshio.write("mesh.xdmf", create_entity_mesh(msh, "triangle", True, True))
         meshio.write("mf.xdmf", create_entity_mesh(msh, "line", True))
     MPI.COMM_WORLD.barrier()
 
@@ -151,8 +161,6 @@ class ChannelProblemSetup():
         bc3 = df.DirichletBC(Q, df.Constant(0), mf, bc_dict["outlet"])
         self.bcu = [bc0, bc1, bc2]
         self.bcp = [bc3]
-        from IPython import embed
-        embed()
         self.ds_ = df.Measure("ds", domain=self.mesh, subdomain_data=mf)
         return
 
