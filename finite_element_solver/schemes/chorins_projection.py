@@ -7,8 +7,8 @@ Created on Thu Mar  4 11:30:48 2021
 
 Simulation gets slower and slower. 1st iteration takes 2s, 10th iteration 30s.
 """
-from dolfin import (inner, grad, div, dx, solve, lhs, rhs, ds, dot, nabla_grad,
-                    FacetNormal, assemble, outer, Constant, Identity, sym)
+from dolfin import (Constant, FacetNormal, Identity, assemble, div, dot, ds,
+                    dx, grad, inner, lhs, nabla_grad, rhs, solve, sym)
 
 
 def epsilon(u):
@@ -67,8 +67,9 @@ class ImplicitTentativeVelocityStep():
         # diffusion = (-inner(mu * (grad(u_1) + grad(u_1).T), grad(vu))*dx
         #               + dot(mu * (grad(u_1) + grad(u_1).T)*n, vu)*ds)  # just fine
         # diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu))*dx)  # just fine
+        # just fine, but horribly slow in combination with ???  -> not reproducable
         diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu)) * dx
-                     + dot(mu * (grad(u) + grad(u).T) * n, vu) * ds)  # just fine, but horribly slow in combination with ???  -> not reproducable
+                     + dot(mu * (grad(u) + grad(u).T) * n, vu) * ds)
         # convection = rho*dot(dot(u, nabla_grad(u_1)), vu) * dx  # no vortices
         # convection = rho*dot(dot(u_1, nabla_grad(u)), vu) * dx  # no vortices
         # convection = dot(div(rho*outer(u_1, u_1)), vu) * dx  # not stable!
