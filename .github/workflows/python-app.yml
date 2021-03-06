@@ -23,8 +23,10 @@ jobs:
         python-version: 3.9
     - name: Lint with flake8
       run: |
-        pip3 install flake8 pytest
-        flake8 finite_element_solver
+       DEBIAN_FRONTEND=noninteractive apt-get update -qq
+       DEBIAN_FRONTEND=noninteractive apt-get install python3-pip
+       pip3 install flake8 pytest
+       flake8 finite_element_solver
     - name: Install dependencies
       run: |
        DEBIAN_FRONTEND=noninteractive apt-get update -qq
