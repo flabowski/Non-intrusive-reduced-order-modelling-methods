@@ -13,7 +13,7 @@ jobs:
   build:
 
     runs-on: ubuntu-20.04
-    container: ubuntu-20.04
+    container: ubuntu:20.04
 
     steps:
     - uses: actions/checkout@v2
@@ -42,4 +42,4 @@ jobs:
     - name: Test with pytest
       run: |
         pip3 install .
-        python3 -c "from finite_element solver import *"
+        python3 -m pytest tests/
