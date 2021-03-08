@@ -10,80 +10,144 @@ import dolfin as df
 import matplotlib.pyplot as plt
 import numpy as np
 import pygmsh
+import meshio
+from mpi4py import MPI
 
 
-class CylinderMesh():
-    def __init__(self, lcar):
-        mesh_pygmsh = self.get_pygmsh_mesh(lcar)
-        self.mesh = self.gmsh2dolfin_2Dmesh(mesh_pygmsh, 1)
-        self.points = self.mesh.coordinates()
-        self.simplices = self.mesh.cells()
-        return
+def create_entity_mesh(mesh, cell_type, prune_z=False,
+                       remove_unused_points=False):
+    """
+    Given a meshio mesh, extract mesh and physical markers for a given entity.
+    We assume that all unused points are at the end of the mesh.points
+    (this happens when we use physical markers with pygmsh)
+    """
+    cells = mesh.get_cells_type(cell_type)
+    try:
+        # If mesh created with gmsh API it is simple to extract entity data
+        cell_data = mesh.get_cell_data("gmsh:physical", cell_type)
+    except KeyError:
+        # If mehs created with pygmsh, we need to parse through cell sets and sort the data
+        cell_entities = []
+        cell_data = []
+        cell_sets = mesh.cell_sets_dict
+        for marker, set in cell_sets.items():
+            for type, entities in set.items():
+                if type == cell_type:
+                    cell_entities.append(entities)
+                    cell_data.append(np.full(len(entities), int(marker)))
+        cell_entities = np.hstack(cell_entities)
+        sorted = np.argsort(cell_entities)
+        cell_data = np.hstack(cell_data)[sorted]
+    if remove_unused_points:
+        num_vertices = len(np.unique(cells.reshape(-1)))
+        # We assume that the mesh has been created with physical tags,
+        # then unused points are at the end of the array
+        points = mesh.points[:num_vertices]
+    else:
+        points = mesh.points
 
-    def get_pygmsh_mesh(self, lcar):
-        with pygmsh.geo.Geometry() as geom:
-            r = .05
-            p = [geom.add_point([.20, .20], lcar),
-                 geom.add_point([0.0, .0], lcar),
-                 geom.add_point([2.2, .0], lcar),
-                 geom.add_point([2.2, .41], lcar),
-                 geom.add_point([0.0, .41], lcar),
-                 geom.add_point([.2 + r, .20], lcar),
-                 geom.add_point([.20, .2 + r], lcar),
-                 geom.add_point([.2 - r, .20], lcar),
-                 geom.add_point([.20, .2 - r], lcar)]
-            c = [geom.add_line(p[1], p[2]),
-                 geom.add_line(p[2], p[3]),
-                 geom.add_line(p[3], p[4]),
-                 geom.add_line(p[4], p[1]),
-                 geom.add_circle_arc(p[5], p[0], p[6]),
-                 geom.add_circle_arc(p[6], p[0], p[7]),
-                 geom.add_circle_arc(p[7], p[0], p[8]),
-                 geom.add_circle_arc(p[8], p[0], p[5])]
-            ll1 = geom.add_curve_loop([c[0], c[1], c[2], c[3]])
-            ll2 = geom.add_curve_loop([c[4], c[5], c[6], c[7]])
-            s = [geom.add_plane_surface(ll1, [ll2])]
-            # s = [geom.add_plane_surface(ll1)]
-            geom.add_surface_loop(s)
-            msh = geom.generate_mesh()
-        return msh
+    # Create output mesh
+    out_mesh = meshio.Mesh(points=points, cells={cell_type: cells},
+                           cell_data={"name_to_read": [cell_data]})
+    if prune_z:
+        out_mesh.prune_z_0()
+    return out_mesh
 
-    def gmsh2dolfin_2Dmesh(self, msh, unused_points):
+
+def create_channel_mesh(lcar):
+    with pygmsh.geo.Geometry() as geom:
+        r = .05
+        p = [geom.add_point([.20, .20], lcar),
+             geom.add_point([0.0, .0], lcar),
+             geom.add_point([2.2, .0], lcar),
+             geom.add_point([2.2, .41], lcar),
+             geom.add_point([0.0, .41], lcar),
+             geom.add_point([.2 + r, .20], lcar),
+             geom.add_point([.20, .2 + r], lcar),
+             geom.add_point([.2 - r, .20], lcar),
+             geom.add_point([.20, .2 - r], lcar)]
+        c = [geom.add_line(p[1], p[2]),
+             geom.add_line(p[2], p[3]),
+             geom.add_line(p[3], p[4]),
+             geom.add_line(p[4], p[1]),
+             geom.add_circle_arc(p[5], p[0], p[6]),
+             geom.add_circle_arc(p[6], p[0], p[7]),
+             geom.add_circle_arc(p[7], p[0], p[8]),
+             geom.add_circle_arc(p[8], p[0], p[5])]
+        ll1 = geom.add_curve_loop([c[0], c[1], c[2], c[3]])
+        ll2 = geom.add_curve_loop([c[4], c[5], c[6], c[7]])
+        s = [geom.add_plane_surface(ll1, [ll2])]
+        fluid = geom.add_surface_loop(s)
+
+        # Add physical markers to gmsh
+        # Triangles:
+        # - 0: Fluid
+        # Lines:
+        # - 1: Top and bottom wall
+        # - 2: Cylinder wall
+        # - 3: Inlet
+        # - 4: Outlet
+        geom.add_physical(fluid, "0")
+        top_and_bottom = [c[0], c[2]]
+        geom.add_physical(top_and_bottom, "1")
+        inlet = [c[3]]
+        geom.add_physical(inlet, "3")
+        outlet = [c[1]]
+        geom.add_physical(outlet, "4")
+        cylinderwall = c[4:]
+        geom.add_physical(cylinderwall, "2")
+        # When using physical markers, unused points are placed last in the mesh
+        msh = geom.generate_mesh(dim=2)
+
+    # Write mesh to XDMF which we can easily read into dolfin
+    if MPI.COMM_WORLD.rank == 0:
+        meshio.write("mesh.xdmf", create_entity_mesh(msh, "triangle", True, True))
+        meshio.write("mf.xdmf", create_entity_mesh(msh, "line", True))
+    MPI.COMM_WORLD.barrier()
+
+
+class SimpleMesh():
+    """
+    Simple representation of mesh as points (geometry) and connecitivities (topology)
+    Used for
+    """
+
+    def __init__(self, dolfin_mesh):
+        self.points = dolfin_mesh.coordinates()
+        self.simplices = dolfin_mesh.cells()
+
+
+def plot(mesh):
+    """
+    2D plot of mesh
+    """
+    from scipy.spatial import delaunay_plot_2d
+    fig = delaunay_plot_2d(SimpleMesh(mesh))
+    ax = fig.gca()
+    ax.set_aspect("equal")
+    return fig, ax
+
+
+class ChannelProblemSetup():
+    def __init__(self, parameters, mesh_name, facet_name,
+                 bc_dict={"obstacle": 2, "channel_walls": 1, "inlet": 3,
+                          "outlet": 4}):
         """
-        Helping function to create a 2D mesh for FEniCS from a gmsh.
-        important! Dont leave any unused points like the center of the circle
-        in the node list. FEniCS will crash!
+        Create the required function spaces, functions and boundary conditions
+        for a channel flow problem
         """
-        msh.prune_z_0()
-        nodes = msh.points[unused_points:]
-        cells = msh.cells_dict["triangle"].astype(np.uintp) - unused_points
-        mesh = df.Mesh()
-        editor = df.MeshEditor()
-        # point, interval, triangle, quadrilateral, hexahedron
-        editor.open(mesh, "triangle", 2, 2)
-        editor.init_vertices(len(nodes))
-        editor.init_cells(len(cells))
-        [editor.add_vertex(i, n) for i, n in enumerate(nodes)]
-        [editor.add_cell(i, n) for i, n in enumerate(cells)]
-        editor.close()
-        return mesh
+        self.mesh = df.Mesh()
+        with df.XDMFFile(mesh_name) as infile:
+            infile.read(self.mesh)
 
-    def plot(self):
-        """lets just steal it
-        """
-        from scipy.spatial import delaunay_plot_2d
-        fig = delaunay_plot_2d(self)
-        ax = fig.gca()
-        ax.set_aspect("equal")
-        return fig, ax
+        mvc = df.MeshValueCollection("size_t", self.mesh,
+                                     self.mesh.topology().dim() - 1)
+        with df.XDMFFile(facet_name) as infile:
+            infile.read(mvc, "name_to_read")
+        mf = df.cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
 
-
-class CylinderDomain():
-    def __init__(self, parameters, mesh):
-        """Function spaces and BCs"""
-        V = df.VectorFunctionSpace(mesh, 'P', 2)
-        Q = df.FunctionSpace(mesh, 'P', 1)
-        self.mesh = mesh
+        V = df.VectorFunctionSpace(self.mesh, 'P', 2)
+        Q = df.FunctionSpace(self.mesh, 'P', 1)
         self.rho = df.Constant(parameters["density [kg/m3]"])
         self.mu = df.Constant(parameters["viscosity [Pa*s]"])
         self.dt = df.Constant(parameters["dt [s]"])
@@ -101,20 +165,13 @@ class CylinderDomain():
         self.U_mean = np.mean(2 / 3 * Ucenter)
 
         U0 = df.Expression((U0_str, "0"), U_m=U_m, degree=2)
-        bc0 = df.DirichletBC(V, df.Constant((0, 0)), cylinderwall)
-        bc1 = df.DirichletBC(V, df.Constant((0, 0)), topandbottom)
-        bc2 = df.DirichletBC(V, U0, inlet)
-        bc3 = df.DirichletBC(Q, df.Constant(0), outlet)
+        bc0 = df.DirichletBC(V, df.Constant((0, 0)), mf, bc_dict["obstacle"])
+        bc1 = df.DirichletBC(V, df.Constant((0, 0)), mf, bc_dict["channel_walls"])
+        bc2 = df.DirichletBC(V, U0, mf, bc_dict["inlet"])
+        bc3 = df.DirichletBC(Q, df.Constant(0), mf, bc_dict["outlet"])
         self.bcu = [bc0, bc1, bc2]
         self.bcp = [bc3]
-        # ds is needed to compute drag and lift.
-        ASD1 = df.AutoSubDomain(topandbottom)
-        ASD2 = df.AutoSubDomain(cylinderwall)
-        mf = df.MeshFunction("size_t", mesh, 1)
-        mf.set_all(0)
-        ASD1.mark(mf, 1)
-        ASD2.mark(mf, 2)
-        self.ds_ = df.Measure("ds", domain=mesh, subdomain_data=mf)
+        self.ds_ = df.Measure("ds", domain=self.mesh, subdomain_data=mf)
         return
 
     def plot(self):
@@ -139,38 +196,3 @@ class CylinderDomain():
         ax1.set_title("velocity")
         ax2.set_title("pressure")
         return fig, (ax1, ax2)
-
-    # TODO: throws: "Expecting a function (not <class 'method'>)"
-    def topandbottom(self, x, on_boundary):
-        return (x[1] < 1e-6) or (.4099 < x[1]) and on_boundary
-
-    def cylinderwall(self, x, on_boundary):
-        in_circle = ((x[0]-.2) * (x[0]-.2) + (x[1]-.2) * (x[1]-.2)) < 0.0025001
-        return (in_circle) & on_boundary
-
-    def inlet(self, x, on_boundary):
-        return (x[0] < 1e-6) and on_boundary
-
-    def outlet(self, x, on_boundary):
-        return (abs(x[0] - 2.2) < 1e-6) and on_boundary
-
-
-def topandbottom(x, on_boundary):
-    return (x[1] < 1e-6) or (.4099 < x[1]) and on_boundary
-
-
-def cylinderwall(x, on_boundary):
-    in_circle = ((x[0]-.2) * (x[0]-.2) + (x[1]-.2) * (x[1]-.2)) < 0.0025001
-    return (in_circle) & on_boundary
-
-
-def inlet(x, on_boundary):
-    return (x[0] < 1e-6) and on_boundary
-
-
-def outlet(x, on_boundary):
-    return (abs(x[0] - 2.2) < 1e-6) and on_boundary
-
-
-if __name__ == "__main__":
-    pass

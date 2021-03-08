@@ -72,7 +72,7 @@ class ImplicitTentativeVelocityStep():
                      + dot(mu * (grad(u) + grad(u).T) * n, vu) * ds)
         # convection = rho*dot(dot(u, nabla_grad(u_1)), vu) * dx  # no vortices
         # convection = rho*dot(dot(u_1, nabla_grad(u)), vu) * dx  # no vortices
-        # convection = dot(div(rho*outer(u_1, u_1)), vu) * dx  # not stable!
+        # convection = dot(div(rho * outer(u_1, u_1)), vu) * dx  # not stable!
         convection = rho * dot(dot(u_1, nabla_grad(u_1)), vu) * dx  # just fine
         F_impl = -acceleration - convection + diffusion + pressure + body_force
 

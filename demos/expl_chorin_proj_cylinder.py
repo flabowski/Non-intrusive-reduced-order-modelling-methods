@@ -7,12 +7,13 @@ Created on Thu Mar  4 10:47:33 2021
 """
 from tqdm import trange  # Progress bar
 import matplotlib.pyplot as plt
-from finite_element_solver.domains.cylinder import CylinderMesh, CylinderDomain
+from finite_element_solver.domains.cylinder import create_channel_mesh, ChannelProblemSetup, plot
 from finite_element_solver.schemes.chorins_projection import (
     ImplicitTentativeVelocityStep, ExplicitTentativeVelocityStep, PressureStep,
     VelocityCorrectionStep)
 from finite_element_solver.schemes.chorins_projection_tutorial import (
     TentativeVelocityStep, PressureStep, VelocityCorrectionStep)
+from dolfin import XDMFFile
 
 
 def test():
@@ -23,8 +24,10 @@ def test():
                      "velocity [m/s]": 1.5,
                      "dt [s]": 0.1
                      }
-    my_mesh = CylinderMesh(lcar=0.02)
-    my_domain = CylinderDomain(my_parameters["velocity [m/s]"], my_mesh.mesh)
+    # Create mesh
+    create_channel_mesh(lcar=0.02)
+
+    my_domain = ChannelProblemSetup(my_parameters["velocity [m/s]"], "mesh.xdmf", "mf.xdmf")
 
     cfl = .05
     dt = cfl * my_domain.mesh.hmin() / my_domain.U_mean
@@ -36,7 +39,7 @@ def test():
     tvs = ImplicitTentativeVelocityStep(my_parameters, my_domain)
     tvs = ExplicitTentativeVelocityStep(my_parameters, my_domain)
 
-    my_mesh.plot()
+    plot(my_domain.mesh)
     plt.show()
 
     rho = my_parameters["density [kg/m3]"]
@@ -48,7 +51,8 @@ def test():
     print("rho = ", rho)
     print("mu = ", mu)
     print("dt = ", dt)
-
+    outfile = XDMFFile("u.xdmf")
+    append = False
     for n in trange(8000):
         tvs.solve()
         ps.solve()
@@ -56,6 +60,8 @@ def test():
 
         my_domain.u_1.assign(my_domain.u_)
         my_domain.p_1.assign(my_domain.p_)
+        outfile.write_checkpoint(my_domain.u_, "u", n * dt, append=append)
+        append = True
         if (n % 100) == 0:
             fig, ax = my_domain.plot()
             plt.savefig("tst.png")
