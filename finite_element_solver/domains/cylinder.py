@@ -66,9 +66,9 @@ def create_channel_mesh(lcar):
              geom.add_point([.20, .2 + r], lcar),
              geom.add_point([.2 - r, .20], lcar),
              geom.add_point([.20, .2 - r], lcar)]
-        c = [geom.add_line(p[1], p[2]),
+        c = [geom.add_line(p[1], p[2]),  # btm
              geom.add_line(p[2], p[3]),
-             geom.add_line(p[3], p[4]),
+             geom.add_line(p[3], p[4]),  # top
              geom.add_line(p[4], p[1]),
              geom.add_circle_arc(p[5], p[0], p[6]),
              geom.add_circle_arc(p[6], p[0], p[7]),
@@ -87,22 +87,30 @@ def create_channel_mesh(lcar):
         # - 2: Cylinder wall
         # - 3: Inlet
         # - 4: Outlet
-        geom.add_physical(fluid, "0")
         top_and_bottom = [c[0], c[2]]
-        geom.add_physical(top_and_bottom, "1")
-        inlet = [c[3]]
-        geom.add_physical(inlet, "3")
-        outlet = [c[1]]
-        geom.add_physical(outlet, "4")
         cylinderwall = c[4:]
+        inlet = [c[3]]
+        outlet = [c[1]]
+        geom.add_physical(fluid, "0")
+        geom.add_physical(top_and_bottom, "1")
         geom.add_physical(cylinderwall, "2")
+        geom.add_physical(inlet, "3")
+        geom.add_physical(outlet, "4")
         # When using physical markers, unused points are placed last in the mesh
         msh = geom.generate_mesh(dim=2)
 
     # Write mesh to XDMF which we can easily read into dolfin
     if MPI.COMM_WORLD.rank == 0:
-        meshio.write("mesh.xdmf", create_entity_mesh(msh, "triangle", True, True))
-        meshio.write("mf.xdmf", create_entity_mesh(msh, "line", True))
+        #  Pick one of ['abaqus', 'ansys', 'avsucd', 'cgns', 'dolfin-xml',
+        # 'exodus', 'flac3d', 'gmsh', 'gmsh22', 'h5m', 'hmf', 'mdpa', 'med',
+        # 'medit', 'nastran', 'neuroglancer', 'obj', 'off', 'permas', 'ply',
+        # 'stl', 'su2', 'svg', 'tecplot', 'tetgen', 'ugrid', 'vtk', 'vtu',
+        # 'wkt', 'xdmf'], xdmf fails
+        input_mesh = create_entity_mesh(msh, "triangle", True, True)
+        meshio.write("mesh.xdmf", input_mesh, file_format="xdmf")
+        # meshio.write("mesh.xdmf", input_mesh)
+        meshio.write("mf.xdmf", create_entity_mesh(msh, "line", True),
+                     file_format="xdmf")
     MPI.COMM_WORLD.barrier()
 
 
@@ -196,3 +204,7 @@ class ChannelProblemSetup():
         ax1.set_title("velocity")
         ax2.set_title("pressure")
         return fig, (ax1, ax2)
+
+
+if __name__ == "__main__":
+    create_channel_mesh(lcar=0.02)

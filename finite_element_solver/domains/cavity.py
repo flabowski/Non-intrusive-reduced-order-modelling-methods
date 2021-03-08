@@ -9,68 +9,80 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pygmsh
 import matplotlib as mpl
-from dolfin import (Function, DirichletBC, Expression, TestFunction, ds,
-                    TrialFunction, Mesh, MeshEditor, AutoSubDomain,
-                    MeshFunction, FunctionSpace, Constant, VectorFunctionSpace)
+from dolfin import (Function, DirichletBC, Expression, TestFunction,
+                    TrialFunction, Mesh, FunctionSpace, Constant, Measure,
+                    VectorFunctionSpace, XDMFFile, MeshValueCollection, cpp)
+from mpi4py import MPI
+import meshio
+from finite_element_solver.domains.cylinder import create_entity_mesh
+# TODO: make generic module
 
 
-class CavityMesh():
-    def __init__(self, L, lcar):
-        mesh_pygmsh = self.get_pygmsh_mesh(L, lcar)
-        self.mesh = self.gmsh2dolfin_2Dmesh(mesh_pygmsh, 0)
-        self.points = self.mesh.coordinates()
-        self.simplices = self.mesh.cells()
-        return
+def create_cavity_mesh(lcar, L=1.0):
+    with pygmsh.geo.Geometry() as geom:
+        p = [geom.add_point([.0, .0], lcar),
+             geom.add_point([L, .0], lcar),
+             geom.add_point([L, L], lcar),
+             geom.add_point([.0, L], lcar)]
+        c = [geom.add_line(p[0], p[1]),
+             geom.add_line(p[1], p[2]),
+             geom.add_line(p[2], p[3]),
+             geom.add_line(p[3], p[0])]
+        ll1 = geom.add_curve_loop([c[0], c[1], c[2], c[3]])
+        s = [geom.add_plane_surface(ll1)]
+        fluid = geom.add_surface_loop(s)
+        # Add physical markers to gmsh
+        # Triangles:
+        # - 0: Fluid
+        # Lines:
+        # - 1: bottom
+        # - 2: right
+        # - 3: top
+        # - 4: left
+        btm = [c[0]]
+        rgt = [c[1]]
+        top = [c[2]]
+        lft = [c[3]]
+        geom.add_physical(fluid, "0")
+        geom.add_physical(btm, "1")
+        geom.add_physical(rgt, "2")
+        geom.add_physical(top, "3")
+        geom.add_physical(lft, "4")
+        # When using physical markers, unused points are placed last in the mesh
+        msh = geom.generate_mesh(dim=2)
 
-    def get_pygmsh_mesh(self, L, lcar):
-        with pygmsh.geo.Geometry() as geom:
-            p = [geom.add_point([.0, .0], lcar),
-                 geom.add_point([L, .0], lcar),
-                 geom.add_point([L, L], lcar),
-                 geom.add_point([.0, L], lcar)]
-            c = [geom.add_line(p[0], p[1]),
-                 geom.add_line(p[1], p[2]),
-                 geom.add_line(p[2], p[3]),
-                 geom.add_line(p[3], p[0])]
-            ll1 = geom.add_curve_loop([c[0], c[1], c[2], c[3]])
-            s = [geom.add_plane_surface(ll1)]
-            geom.add_surface_loop(s)
-            msh = geom.generate_mesh()
-        return msh
+    # Write mesh to XDMF which we can easily read into dolfin
+    if MPI.COMM_WORLD.rank == 0:
+        #  Pick one of ['abaqus', 'ansys', 'avsucd', 'cgns', 'dolfin-xml',
+        # 'exodus', 'flac3d', 'gmsh', 'gmsh22', 'h5m', 'hmf', 'mdpa', 'med',
+        # 'medit', 'nastran', 'neuroglancer', 'obj', 'off', 'permas', 'ply',
+        # 'stl', 'su2', 'svg', 'tecplot', 'tetgen', 'ugrid', 'vtk', 'vtu',
+        # 'wkt', 'xdmf'], xdmf fails
+        input_mesh = create_entity_mesh(msh, "triangle", True, True)
+        meshio.write("mesh.xdmf", input_mesh, file_format="xdmf")
+        # meshio.write("mesh.xdmf", input_mesh)
+        meshio.write("mf.xdmf", create_entity_mesh(msh, "line", True),
+                     file_format="xdmf")
+    MPI.COMM_WORLD.barrier()
 
-    def gmsh2dolfin_2Dmesh(self, msh, unused_points):
+
+class CavityProblemSetup():
+    def __init__(self, parameters, mesh_name, facet_name,
+                 bc_dict={"bottom": 1, "right": 2, "top": 3, "left": 4}):
         """
-        Helping function to create a 2D mesh for FEniCS from a gmsh.
-        important! Dont leave any unused points like the center of the circle
-        in the node list. FEniCS will crash!
+        Create the required function spaces, functions and boundary conditions
+        for a channel flow problem
         """
-        msh.prune_z_0()
-        nodes = msh.points[unused_points:]
-        cells = msh.cells_dict["triangle"].astype(np.uintp)-unused_points
-        mesh = Mesh()
-        editor = MeshEditor()
-        # point, interval, triangle, quadrilateral, hexahedron
-        editor.open(mesh, "triangle", 2, 2)
-        editor.init_vertices(len(nodes))
-        editor.init_cells(len(cells))
-        [editor.add_vertex(i, n) for i, n in enumerate(nodes)]
-        [editor.add_cell(i, n) for i, n in enumerate(cells)]
-        editor.close()
-        return mesh
+        self.mesh = Mesh()
+        with XDMFFile(mesh_name) as infile:
+            infile.read(self.mesh)
 
-    def plot(self):
-        """lets just steal it
-        """
-        from scipy.spatial import delaunay_plot_2d
-        fig = delaunay_plot_2d(self)
-        ax = fig.gca()
-        ax.set_aspect("equal")
-        return fig, ax
+        mvc = MeshValueCollection("size_t", self.mesh,
+                                  self.mesh.topology().dim() - 1)
+        with XDMFFile(facet_name) as infile:
+            infile.read(mvc, "name_to_read")
+        mf = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
 
-
-class CavityDomain():
-    def __init__(self, parameters, mesh):
-        """Function spaces and BCs"""
         T_init = Constant(parameters["initial temperature [°C]"])
         self.t_amb = Constant(parameters["ambient temperature [°C]"])
         self.t_feeder = Constant(parameters["temperature feeder [°C]"])
@@ -83,28 +95,18 @@ class CavityDomain():
         self.dt = Constant(parameters["dt [s]"])
         self.D = Constant(parameters["Diffusivity [-]"])
 
-        self.mesh = mesh
-        V = VectorFunctionSpace(mesh, 'P', 2)
-        Q = FunctionSpace(mesh, 'P', 1)
-        T = FunctionSpace(mesh, 'P', 1)
+        V = VectorFunctionSpace(self.mesh, 'P', 2)
+        Q = FunctionSpace(self.mesh, 'P', 1)
+        T = FunctionSpace(self.mesh, 'P', 1)
 
-        ASD1 = AutoSubDomain(top)
-        ASD2 = AutoSubDomain(left)
-        ASD3 = AutoSubDomain(bottom)
-        ASD4 = AutoSubDomain(right)
-        mf = MeshFunction("size_t", mesh, 1)
-        mf.set_all(9999)
-        ASD1.mark(mf, 1)
-        ASD2.mark(mf, 2)
-        ASD3.mark(mf, 3)
-        ASD4.mark(mf, 4)
-        self.ds_ = ds(subdomain_data=mf, domain=mesh)
+        self.ds_ = Measure("ds", domain=self.mesh, subdomain_data=mf)
+        print(self.ds_().subdomain_data().array())
+        print(np.unique(self.ds_().subdomain_data().array()))
 
         self.vu, self.vp, self.vt = (TestFunction(V), TestFunction(Q),
                                      TestFunction(T))
         self.u_, self.p_, self.t_ = Function(V), Function(Q), Function(T)
         self.mu, self.rho = Function(T), Function(T)
-        # self.mu_k, self.rho_k = Function(T), Function(T)
         self.u_1, self.p_1, self.t_1, self.rho_1 = (Function(V), Function(Q),
                                                     Function(T), Function(T))
         self.u, self.p, self.t = (TrialFunction(V), TrialFunction(Q),
@@ -114,10 +116,11 @@ class CavityDomain():
         no_slip = Constant((0., 0))
         topflow = Expression(("-x[0] * (x[0] - 1.0) * 6.0 * m", "0.0"),
                              m=U_m, degree=2)
-        bc0 = DirichletBC(V, topflow, top)
-        bc1 = DirichletBC(V, no_slip, left)
-        bc2 = DirichletBC(V, no_slip, bottom)
-        bc3 = DirichletBC(V, no_slip, right)
+
+        bc0 = DirichletBC(V, topflow, mf, bc_dict["top"])
+        bc1 = DirichletBC(V, no_slip, mf, bc_dict["left"])
+        bc2 = DirichletBC(V, no_slip, mf, bc_dict["bottom"])
+        bc3 = DirichletBC(V, no_slip, mf, bc_dict["right"])
         # bc4 = df.DirichletBC(Q, df.Constant(0), top)
         # bc3 = df.DirichletBC(T, df.Constant(800), top)
         self.bcu = [bc0, bc1, bc2, bc3]
@@ -125,13 +128,13 @@ class CavityDomain():
         self.bcp = []
         # bcp = [DirichletBC(Q, Constant(750), top)]
         # self.bct = []
-        self.bct = [DirichletBC(T, Constant(750), top)]
+        self.bct = [DirichletBC(T, Constant(750), mf, bc_dict["top"])]
 
         self.robin_boundary_terms = (
-            self.k_top*(self.t - self.t_feeder)*self.vt*self.ds_(1)
-            + self.k_lft*(self.t - self.t_amb)*self.vt*self.ds_(2)
-            + self.k_btm*(self.t - self.t_amb)*self.vt*self.ds_(3)
-            + self.k_rgt*(self.t - self.t_amb)*self.vt*self.ds_(4))
+            self.k_btm*(self.t - self.t_feeder)*self.vt*self.ds_(1)
+            + self.k_rgt*(self.t - self.t_amb)*self.vt*self.ds_(2)
+            + self.k_top*(self.t - self.t_amb)*self.vt*self.ds_(3)
+            + self.k_lft*(self.t - self.t_amb)*self.vt*self.ds_(4))
 
         # set initial values
         # TODO: find a better solution
@@ -143,12 +146,6 @@ class CavityDomain():
         self.t_1.vector().vec().array = T_init
         self.t_.assign(self.t_1)
         return
-
-    # def rho(self, T):
-    #     raise NotImplementedError(self.__class__.__name__ + '.try_something')
-
-    # def mu(self, T, mu_solid):
-    #     raise NotImplementedError(self.__class__.__name__ + '.try_something')
 
     def plot(self):
         cmap = mpl.cm.inferno
@@ -204,30 +201,6 @@ class CavityDomain():
         ax1.set_ylim([-.1, 1.1])
         # plt.tight_layout()
         return fig, (ax1, ax2)
-
-    # TODO: throws: "Expecting a function (not <class 'method'>)"
-    def top(x, on_boundary):
-        return (abs(x[1]-1.0) < 1e-6) & on_boundary
-
-
-def top(x, on_boundary):
-    return (abs(x[1]-1.0) < 1e-6) & on_boundary
-
-
-def left(x, on_boundary):
-    return (x[0] < 1e-6) and on_boundary
-
-
-def right(x, on_boundary):
-    return (abs(x[0]-1.0) < 1e-6) and on_boundary
-
-
-def walls(x, on_boundary):
-    return (abs((x[0]-1.0)*x[0]) < 1e-6) & on_boundary
-
-
-def bottom(x, on_boundary):
-    return (abs(x[1]) < 1e-6) & on_boundary
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ Created on Thu Mar  4 10:47:33 2021
 """
 from tqdm import trange  # Progress bar
 import matplotlib.pyplot as plt
-from finite_element_solver.domains.cylinder import CylinderMesh, CylinderDomain
+from finite_element_solver.domains.cylinder import create_channel_mesh, ChannelProblemSetup, plot
 from finite_element_solver.schemes.chorins_projection import (
     TutorialTentativeVelocityStep, ImplicitTentativeVelocityStep,
     ExplicitTentativeVelocityStep, PressureStep,
@@ -22,8 +22,11 @@ def test():
                      "velocity [m/s]": 1.5,
                      "dt [s]": 0.1
                      }
-    my_mesh = CylinderMesh(lcar=0.02)
-    my_domain = CylinderDomain(my_parameters, my_mesh.mesh)
+    create_channel_mesh(lcar=0.02)
+    my_domain = ChannelProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
+
+    # my_mesh = CylinderMesh(lcar=0.02)
+    # my_domain = CylinderDomain(my_parameters, my_mesh.mesh)
 
     cfl = .05
     dt = cfl*my_domain.mesh.hmin()/my_domain.U_mean
@@ -36,7 +39,7 @@ def test():
     tvs = ExplicitTentativeVelocityStep(my_domain)
     tvs = ImplicitTentativeVelocityStep(my_domain)
 
-    my_mesh.plot()
+    plot(my_domain.mesh)
     plt.show()
 
     rho = my_parameters["density [kg/m3]"]
