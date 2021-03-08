@@ -95,9 +95,10 @@ class CylinderDomain():
         self.u, self.p = df.TrialFunction(V), df.TrialFunction(Q)  # unknown!
 
         U_m = parameters["velocity [m/s]"]
-        U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
         x = [0, .41 / 2]  # center of the channel
-        self.U_mean = np.mean(2 / 3 * eval(U0_str))
+        Ucenter = 4.*U_m*x[1]*(.41-x[1])/(.41*.41)
+        U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
+        self.U_mean = np.mean(2 / 3 * Ucenter)
 
         U0 = df.Expression((U0_str, "0"), U_m=U_m, degree=2)
         bc0 = df.DirichletBC(V, df.Constant((0, 0)), cylinderwall)
@@ -144,7 +145,7 @@ class CylinderDomain():
         return (x[1] < 1e-6) or (.4099 < x[1]) and on_boundary
 
     def cylinderwall(self, x, on_boundary):
-        in_circle = ((x[0] - .2) * (x[0] - .2) + (x[1] - .2) * (x[1] - .2)) < 0.0025001
+        in_circle = ((x[0]-.2) * (x[0]-.2) + (x[1]-.2) * (x[1]-.2)) < 0.0025001
         return (in_circle) & on_boundary
 
     def inlet(self, x, on_boundary):
@@ -159,7 +160,7 @@ def topandbottom(x, on_boundary):
 
 
 def cylinderwall(x, on_boundary):
-    in_circle = ((x[0] - .2) * (x[0] - .2) + (x[1] - .2) * (x[1] - .2)) < 0.0025001
+    in_circle = ((x[0]-.2) * (x[0]-.2) + (x[1]-.2) * (x[1]-.2)) < 0.0025001
     return (in_circle) & on_boundary
 
 
