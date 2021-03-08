@@ -6,7 +6,7 @@ setup(name='nirom',
 
       description='Add description',
 
-      author='Florian Maurits Arbes',
+      author='Florian Arbes',
 
       author_email='florian.arbes@ife.no',
 

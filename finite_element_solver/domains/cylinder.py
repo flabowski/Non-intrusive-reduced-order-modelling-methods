@@ -14,7 +14,8 @@ import meshio
 from mpi4py import MPI
 
 
-def create_entity_mesh(mesh, cell_type, prune_z=False, remove_unused_points=False):
+def create_entity_mesh(mesh, cell_type, prune_z=False,
+                       remove_unused_points=False):
     """
     Given a meshio mesh, extract mesh and physical markers for a given entity.
     We assume that all unused points are at the end of the mesh.points
@@ -46,7 +47,8 @@ def create_entity_mesh(mesh, cell_type, prune_z=False, remove_unused_points=Fals
         points = mesh.points
 
     # Create output mesh
-    out_mesh = meshio.Mesh(points=points, cells={cell_type: cells}, cell_data={"name_to_read": [cell_data]})
+    out_mesh = meshio.Mesh(points=points, cells={cell_type: cells},
+                           cell_data={"name_to_read": [cell_data]})
     if prune_z:
         out_mesh.prune_z_0()
     return out_mesh
@@ -127,32 +129,40 @@ def plot(mesh):
 
 
 class ChannelProblemSetup():
-    def __init__(self, U_m, mesh_name, facet_name,
-                 bc_dict={"obstacle": 2, "channel_walls": 1, "inlet": 3, "outlet": 4}):
+    def __init__(self, parameters, mesh_name, facet_name,
+                 bc_dict={"obstacle": 2, "channel_walls": 1, "inlet": 3,
+                          "outlet": 4}):
         """
-        Create the required function spaces, functions and boundary conditions for a channel flow problem
+        Create the required function spaces, functions and boundary conditions
+        for a channel flow problem
         """
-
-        """Function spaces and BCs"""
         self.mesh = df.Mesh()
         with df.XDMFFile(mesh_name) as infile:
             infile.read(self.mesh)
 
-        mvc = df.MeshValueCollection("size_t", self.mesh, self.mesh.topology().dim() - 1)
+        mvc = df.MeshValueCollection("size_t", self.mesh,
+                                     self.mesh.topology().dim() - 1)
         with df.XDMFFile(facet_name) as infile:
             infile.read(mvc, "name_to_read")
         mf = df.cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
+
         V = df.VectorFunctionSpace(self.mesh, 'P', 2)
         Q = df.FunctionSpace(self.mesh, 'P', 1)
-        self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)  # for integration
-        self.u_, self.p_ = df.Function(V), df.Function(Q)  # for the solution
-        self.u_1, self.p_1 = df.Function(V), df.Function(Q)  # for the prev. solution
-        self.u_k, self.p_k = df.Function(V), df.Function(Q)  # for the prev. solution
+        self.rho = df.Constant(parameters["density [kg/m3]"])
+        self.mu = df.Constant(parameters["viscosity [Pa*s]"])
+        self.dt = df.Constant(parameters["dt [s]"])
+        self.g = 0.0
+        self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)
+        self.u_, self.p_ = df.Function(V), df.Function(Q)
+        self.u_1, self.p_1 = df.Function(V), df.Function(Q)
+        self.u_k, self.p_k = df.Function(V), df.Function(Q)
         self.u, self.p = df.TrialFunction(V), df.TrialFunction(Q)  # unknown!
 
+        U_m = parameters["velocity [m/s]"]
+        x = [0, .41 / 2]  # center of the channel
+        Ucenter = 4.*U_m*x[1]*(.41-x[1])/(.41*.41)
         U0_str = "4.*U_m*x[1]*(.41-x[1])/(.41*.41)"
-        x = [0, .41 / 2]  # noqa: F841  # evaluate the Expression at the center of the channel
-        self.U_mean = np.mean(2 / 3 * eval(U0_str))
+        self.U_mean = np.mean(2 / 3 * Ucenter)
 
         U0 = df.Expression((U0_str, "0"), U_m=U_m, degree=2)
         bc0 = df.DirichletBC(V, df.Constant((0, 0)), mf, bc_dict["obstacle"])
@@ -177,7 +187,8 @@ class ChannelProblemSetup():
         pressure = p.compute_vertex_values(mesh)
         # print(x.shape, y.shape, u.shape, v.shape)
 
-        fig, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True, figsize=(12, 6))
+        fig, (ax1, ax2) = plt.subplots(2, sharex=True, sharey=True,
+                                       figsize=(12, 6))
         ax1.quiver(x, y, u, v, magnitude)
         ax2.tricontourf(x, y, tri, pressure, levels=40)
         ax1.set_aspect("equal")
