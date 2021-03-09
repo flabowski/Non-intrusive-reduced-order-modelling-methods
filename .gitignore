@@ -128,5 +128,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 *.npy
+*.pickle
 *.png
 *.pdf
+
+# Meshfiles
+.vtk
+.xdmf
+.xml
