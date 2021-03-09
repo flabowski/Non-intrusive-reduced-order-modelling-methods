@@ -15,7 +15,7 @@ from dolfin import (Function, DirichletBC, Expression, TestFunction,
 from mpi4py import MPI
 import meshio
 from finite_element_solver.domains.cylinder import create_entity_mesh
-# TODO: make generic module
+# TODO: make a generic module for create_entity_mesh, plot_mesh
 
 
 def create_cavity_mesh(lcar, L=1.0):
@@ -100,9 +100,6 @@ class CavityProblemSetup():
         T = FunctionSpace(self.mesh, 'P', 1)
 
         self.ds_ = Measure("ds", domain=self.mesh, subdomain_data=mf)
-        # print(self.ds_().subdomain_data().array())
-        # print(np.unique(self.ds_().subdomain_data().array()))
-
         self.vu, self.vp, self.vt = (TestFunction(V), TestFunction(Q),
                                      TestFunction(T))
         self.u_, self.p_, self.t_ = Function(V), Function(Q), Function(T)
@@ -125,8 +122,8 @@ class CavityProblemSetup():
         # bc3 = df.DirichletBC(T, df.Constant(800), top)
         self.bcu = [bc0, bc1, bc2, bc3]
         # no boundary conditions for the pressure
-        self.bcp = []
-        # bcp = [DirichletBC(Q, Constant(750), top)]
+        # self.bcp = []
+        self.bcp = [DirichletBC(Q, Constant(0), mf, bc_dict["top"])]
         self.bct = []
         # self.bct = [DirichletBC(T, Constant(750), mf, bc_dict["top"])]
 
@@ -150,6 +147,42 @@ class CavityProblemSetup():
         self.t_1.vector().vec().array = T_init
         self.t_.assign(self.t_1)
         return
+
+    def get_rho(self):
+        return self.rho.vector().vec().array
+
+    def set_rho(self, rho):
+        self.rho.vector().vec().array[:] = rho
+
+    def get_mu(self):
+        return self.rho.vector().vec().array
+
+    def set_mu(self, mu):
+        self.mu.vector().vec().array[:] = mu
+
+    def get_t(self):
+        return self.t_.vector().vec().array
+
+    def set_t(self, t):
+        self.t_.vector().vec().array[:] = t
+
+    def get_dt(self):
+        return self.dt.values()
+
+    def set_dt(self, dt):
+        self.dt.assign(dt)
+
+    def get_D(self):
+        return self.D.values()
+
+    def set_D(self, D):
+        self.D.assign(D)
+
+    def get_t_amb(self):
+        return self.t_amb.values()
+
+    def set_t_amb(self, t_amb):
+        self.t_amb.assign(t_amb)
 
     def plot(self):
         cmap = mpl.cm.inferno
@@ -196,7 +229,8 @@ class CavityProblemSetup():
         ax3.set_aspect("equal")
         ax4.set_aspect("equal")
         ax5.set_aspect("equal")
-        ax1.set_title("velocity")
+        ax1.set_title("velocity\n{:.4f} ... {:.4f} m/s".format(
+            magnitude.min(), magnitude.max()))
         ax2.set_title("pressure")
         ax3.set_title("temperature")
         ax4.set_title("viscosity")
