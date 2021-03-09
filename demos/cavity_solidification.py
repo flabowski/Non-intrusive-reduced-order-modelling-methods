@@ -10,7 +10,7 @@ from scipy.interpolate import interp1d
 from tqdm import trange  # Progress bar
 import matplotlib.pyplot as plt
 from finite_element_solver.domains.cylinder import plot
-from finite_element_solver.domains.cavity import (create_channel_mesh,
+from finite_element_solver.domains.cavity import (create_cavity_mesh,
                                                   CavityProblemSetup)
 from finite_element_solver.schemes.chorins_projection import (
     ImplicitTentativeVelocityStep, PressureStep, VelocityCorrectionStep)
@@ -35,7 +35,7 @@ def test():
                      "dt [s]": 0.1
                      }
     # my_mesh = CavityMesh(my_parameters["characteristic length [m]"], lcar=0.02)
-    create_channel_mesh(lcar=0.02)
+    create_cavity_mesh(lcar=0.02)
     my_domain = CavityProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
     density = my_domain.rho.vector().vec().array
     viscosity = my_domain.mu.vector().vec().array
@@ -74,11 +74,11 @@ def test():
     print(my_domain.k_top.values())
     print(my_domain.k_lft.values())
     print(my_domain.k_rgt.values())
-    my_domain.k_lft = 1000000000
-    my_domain.k_rgt = 1000000
-    my_domain.k_btm = 1000
+    my_domain.k_lft.assign(.1)
+    my_domain.k_rgt.assign(.01)
+    my_domain.k_btm.assign(.001)
 
-    for n in trange(100):
+    for n in trange(10000):
         tvs.solve(reassemble_A=True)
         ps.solve()
         vcs.solve()
@@ -89,7 +89,7 @@ def test():
         my_domain.t_1.assign(my_domain.t_)
         viscosity[:] = mu_Al(temperature, my_parameters["viscosity solid [Pa*s]"])*1000
         density[:] = rho_Al(temperature)/1000
-        if (n % 10) == 0:
+        if (n % 100) == 0:
             fig, ax = my_domain.plot()
             plt.savefig("tst.png")
             plt.close()

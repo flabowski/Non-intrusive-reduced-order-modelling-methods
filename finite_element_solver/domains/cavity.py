@@ -100,8 +100,8 @@ class CavityProblemSetup():
         T = FunctionSpace(self.mesh, 'P', 1)
 
         self.ds_ = Measure("ds", domain=self.mesh, subdomain_data=mf)
-        print(self.ds_().subdomain_data().array())
-        print(np.unique(self.ds_().subdomain_data().array()))
+        # print(self.ds_().subdomain_data().array())
+        # print(np.unique(self.ds_().subdomain_data().array()))
 
         self.vu, self.vp, self.vt = (TestFunction(V), TestFunction(Q),
                                      TestFunction(T))
@@ -127,14 +127,18 @@ class CavityProblemSetup():
         # no boundary conditions for the pressure
         self.bcp = []
         # bcp = [DirichletBC(Q, Constant(750), top)]
-        # self.bct = []
-        self.bct = [DirichletBC(T, Constant(750), mf, bc_dict["top"])]
+        self.bct = []
+        # self.bct = [DirichletBC(T, Constant(750), mf, bc_dict["top"])]
 
         self.robin_boundary_terms = (
-            self.k_btm*(self.t - self.t_feeder)*self.vt*self.ds_(1)
+            self.k_btm*(self.t - self.t_amb)*self.vt*self.ds_(1)
             + self.k_rgt*(self.t - self.t_amb)*self.vt*self.ds_(2)
-            + self.k_top*(self.t - self.t_amb)*self.vt*self.ds_(3)
+            + self.k_top*(self.t - self.t_feeder)*self.vt*self.ds_(3)
             + self.k_lft*(self.t - self.t_amb)*self.vt*self.ds_(4))
+        print("k, T", self.k_btm.values(), self.t_feeder.values())
+        print("k, T", self.k_rgt.values(), self.t_amb.values())
+        print("k, T", self.k_top.values(), self.t_amb.values())
+        print("k, T", self.k_lft.values(), self.t_amb.values())
 
         # set initial values
         # TODO: find a better solution
