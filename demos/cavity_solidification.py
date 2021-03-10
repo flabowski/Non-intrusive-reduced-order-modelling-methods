@@ -13,66 +13,67 @@ from finite_element_solver.domains.cylinder import plot
 from finite_element_solver.domains.cavity import (create_cavity_mesh,
                                                   CavityProblemSetup)
 from finite_element_solver.schemes.chorins_projection import (
-    ImplicitTentativeVelocityStep, PressureStep, VelocityCorrectionStep)
+    ImplicitTentativeVelocityStep, PressureStep, VelocityCorrectionStep,
+    ExplicitTentativeVelocityStep, TutorialTentativeVelocityStep)
 from finite_element_solver.schemes.convection_diffusion import (
     ConvectionDiffusion)
 
 
-def body_force():
-    # all the IO and printing happens here
-    my_parameters = {"Diffusivity [-]": 1e-2,
-                     "viscosity solid [Pa*s]": 0.1,  # arbitrary.
-                     "characteristic length [m]": 1.0,
-                     "ambient temperature [°C]": 25,
-                     "initial temperature [°C]": 800,
-                     "temperature feeder [°C]": 800,
-                     "mean velocity lid [m/s]": 1.0,
-                     "gravity [m/s²]": 9.81,
-                     "dt [s]": 0.1
-                     }
-    create_cavity_mesh(lcar=0.02)
-    my_domain = CavityProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
+# def body_force():
+#     # all the IO and printing happens here
+#     my_parameters = {"Diffusivity [-]": 1e-2,
+#                      "viscosity solid [Pa*s]": 0.1,  # arbitrary.
+#                      "characteristic length [m]": 1.0,
+#                      "ambient temperature [°C]": 25,
+#                      "initial temperature [°C]": 800,
+#                      "temperature feeder [°C]": 800,
+#                      "mean velocity lid [m/s]": 1.0,
+#                      "gravity [m/s²]": 9.81,
+#                      "dt [s]": 0.1
+#                      }
+#     create_cavity_mesh(lcar=0.02)
+#     my_domain = CavityProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
 
-    cfl = .1
-    dt = cfl*my_domain.mesh.hmin()/my_parameters["mean velocity lid [m/s]"]
-    my_parameters["dt [s]"] = dt
-    my_domain.set_dt(dt)
+#     cfl = .1
+#     dt = cfl*my_domain.mesh.hmin()/my_parameters["mean velocity lid [m/s]"]
+#     my_parameters["dt [s]"] = dt
+#     my_domain.set_dt(dt)
 
-    tvs = ImplicitTentativeVelocityStep(my_domain)
-    ps = PressureStep(my_domain)
-    vcs = VelocityCorrectionStep(my_domain)
-    cd = ConvectionDiffusion(my_domain)
+#     tvs = ImplicitTentativeVelocityStep(my_domain)
+#     ps = PressureStep(my_domain)
+#     vcs = VelocityCorrectionStep(my_domain)
+#     cd = ConvectionDiffusion(my_domain)
 
-    plot(my_domain.mesh)
-    plt.show()
+#     plot(my_domain.mesh)
+#     plt.show()
 
-    mu_new = mu_Al(my_domain.get_t(), my_parameters["viscosity solid [Pa*s]"])*1000
-    rho_new = rho_Al(my_domain.get_t())/1000
-    my_domain.set_mu(mu_new)
-    my_domain.set_rho(rho_new)
+#     mu_new = mu_Al(my_domain.get_t(), my_parameters["viscosity solid [Pa*s]"])*1000
+#     rho_new = rho_Al(my_domain.get_t())/1000
+#     my_domain.set_mu(mu_new)
+#     my_domain.set_rho(rho_new)
 
-    my_domain.k_lft.assign(.01)
-    my_domain.k_rgt.assign(.01)
-    my_domain.k_btm.assign(.001)
+#     my_domain.k_lft.assign(.01)
+#     my_domain.k_rgt.assign(.01)
+#     my_domain.k_btm.assign(.001)
 
-    for n in trange(10000):
-        tvs.solve(reassemble_A=True)
-        ps.solve()
-        vcs.solve()
-        cd.solve()
+#     for n in trange(10000):
+#         tvs.solve(reassemble_A=True)
+#         ps.solve()
+#         vcs.solve()
+#         cd.solve()
 
-        my_domain.u_1.assign(my_domain.u_)
-        my_domain.p_1.assign(my_domain.p_)
-        my_domain.t_1.assign(my_domain.t_)
-        mu_new = mu_Al(my_domain.get_t(),
-                       my_parameters["viscosity solid [Pa*s]"])*1000
-        rho_new = rho_Al(my_domain.get_t())/1000
-        my_domain.set_mu(mu_new)
-        my_domain.set_rho(rho_new)
-        if (n % 1) == 0:
-            fig, ax = my_domain.plot()
-            plt.savefig("tst{:.0f}.png".format(n))
-            plt.close()
+#         my_domain.u_1.assign(my_domain.u_)
+#         my_domain.p_1.assign(my_domain.p_)
+#         my_domain.t_1.assign(my_domain.t_)
+#         mu_new = mu_Al(my_domain.get_t(),
+#                        my_parameters["viscosity solid [Pa*s]"])*1000
+#         rho_new = rho_Al(my_domain.get_t())/1000
+#         my_domain.set_mu(mu_new)
+#         my_domain.set_rho(rho_new)
+#         if (n % 1) == 0:
+#             fig, ax = my_domain.plot()
+#             plt.savefig("tst{:.0f}.png".format(n))
+#             plt.close()
 
 
 def Aluminum():
@@ -81,7 +82,7 @@ def Aluminum():
     k = 205  # W/(m K)
     cp = 0.91 * 1000  # kJ/(kg K) *1000 = J/(kg K)
     rho = 2350  # kg /m3
-    alpha = k/cp/rho
+    alpha = k/(cp*rho)
     # all the IO and printing happens here
     my_parameters = {"Diffusivity [-]": alpha,
                      "viscosity solid [Pa*s]": 0.1,  # arbitrary.
@@ -94,13 +95,14 @@ def Aluminum():
                      "thermal conductivity bottom [W/(m K)]": 0.,
                      "thermal conductivity right [W/(m K)]": 0.,
                      "mean velocity lid [m/s]": 0.0,
-                     "gravity [m/s²]": 9.81*0,
+                     "gravity [m/s²]": 9.81,
                      "dt [s]": 0.01
                      }
     create_cavity_mesh(lcar=0.02)
     my_domain = CavityProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
 
     tvs = ImplicitTentativeVelocityStep(my_domain)
+    # tvs = ExplicitTentativeVelocityStep(my_domain)
     ps = PressureStep(my_domain)
     vcs = VelocityCorrectionStep(my_domain)
     cd = ConvectionDiffusion(my_domain)
@@ -121,28 +123,15 @@ def Aluminum():
     print("dt = ", my_domain.get_dt())
 
     print(np.unique(my_domain.ds_(3).subdomain_data().array()))
-    my_domain.k_lft.assign(.00001)
-    my_domain.k_rgt.assign(.0001)
-    my_domain.k_btm.assign(.0001)
+    my_domain.k_lft.assign(.000)
+    my_domain.k_rgt.assign(.00)
+    my_domain.k_btm.assign(.00)
 
     for n in trange(10000):
-        try:
-            tvs.solve(reassemble_A=True)
-            ps.solve()
-            vcs.solve()
-            cd.solve()
-        except:
-            fig, ax = my_domain.plot()
-            plt.savefig("failed_{:.0f}.png".format(n))
-            plt.close()
-            my_domain.u_.assign(my_domain.u_1)
-            my_domain.p_.assign(my_domain.p_1)
-            my_domain.t_.assign(my_domain.t_1)
-            fig, ax = my_domain.plot()
-            plt.savefig("failed_{:.0f}.png".format(n-1))
-            plt.close()
-            break
-
+        tvs.solve(reassemble_A=True)
+        ps.solve()
+        vcs.solve()
+        cd.solve()
         my_domain.u_1.assign(my_domain.u_)
         my_domain.p_1.assign(my_domain.p_)
         my_domain.t_1.assign(my_domain.t_)

@@ -207,10 +207,12 @@ class CavityProblemSetup():
         ax3 = plt.subplot(244, sharex=ax1, sharey=ax1)
         ax4 = plt.subplot(247, sharex=ax1, sharey=ax1)
         ax5 = plt.subplot(248, sharex=ax1, sharey=ax1)
-        ax1.quiver(x, y, u, v, magnitude)
+        ax1.plot(x, y, "k.", ms=.5)
+        not0 = magnitude > 1e-6
+        if np.sum(not0) > 0:
+            ax1.quiver(x[not0], y[not0], u[not0], v[not0], magnitude[not0])
         c2 = ax2.tricontourf(x, y, tri, pressure, levels=40, cmap=cmap)
-        c3 = ax3.tricontourf(x, y, tri, temperature, levels=40,
-                             vmin=600., vmax=800., cmap=cmap)
+        c3 = ax3.tricontourf(x, y, tri, temperature, levels=40, cmap=cmap)
         c4 = ax4.tricontourf(x, y, tri, viscosity, levels=40,
                              # vmin=self.mu(800, .1), vmax=self.mu(600, .1),
                              cmap=cmap_r)
