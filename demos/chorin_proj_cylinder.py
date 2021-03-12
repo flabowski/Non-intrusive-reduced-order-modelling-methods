@@ -53,7 +53,7 @@ def test():
     print("dt = ", dt)
 
     for n in trange(8000):
-        tvs.solve()
+        tvs.solve(reassemble_A=True)
         ps.solve()
         vcs.solve()
 

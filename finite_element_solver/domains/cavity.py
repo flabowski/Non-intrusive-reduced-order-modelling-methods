@@ -12,6 +12,8 @@ import matplotlib as mpl
 from dolfin import (Function, DirichletBC, Expression, TestFunction,
                     TrialFunction, Mesh, FunctionSpace, Constant, Measure,
                     VectorFunctionSpace, XDMFFile, MeshValueCollection, cpp)
+from dolfin import (VectorElement, FiniteElement, inner, grad, dx, div, solve,
+                    lhs, rhs, split, project)
 from mpi4py import MPI
 import meshio
 from finite_element_solver.domains.cylinder import create_entity_mesh
@@ -67,8 +69,7 @@ def create_cavity_mesh(lcar, L=1.0):
 
 
 class CavityProblemSetup():
-    def __init__(self, parameters, mesh_name, facet_name,
-                 bc_dict={"bottom": 1, "right": 2, "top": 3, "left": 4}):
+    def __init__(self, parameters, mesh_name, facet_name):
         """
         Create the required function spaces, functions and boundary conditions
         for a channel flow problem
@@ -81,7 +82,8 @@ class CavityProblemSetup():
                                   self.mesh.topology().dim() - 1)
         with XDMFFile(facet_name) as infile:
             infile.read(mvc, "name_to_read")
-        mf = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
+        mf = self.mf = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
+        self.bc_dict = {"bottom": 1, "right": 2, "top": 3, "left": 4}
 
         T_init = Constant(parameters["initial temperature [°C]"])
         self.t_amb = Constant(parameters["ambient temperature [°C]"])
@@ -90,13 +92,14 @@ class CavityProblemSetup():
         self.k_lft = Constant(parameters["thermal conductivity left [W/(m K)]"])
         self.k_btm = Constant(parameters["thermal conductivity bottom [W/(m K)]"])
         self.k_rgt = Constant(parameters["thermal conductivity right [W/(m K)]"])
-        U_m = Constant(parameters["mean velocity lid [m/s]"])
-        g = self.g = Constant(parameters["gravity [m/s²]"])
+        self.U_m = Constant(parameters["mean velocity lid [m/s]"])
+        g = parameters["gravity [m/s²]"]
+        self.g = Constant((0.0, -g))
         self.dt = Constant(parameters["dt [s]"])
         self.D = Constant(parameters["Diffusivity [-]"])
 
-        V = VectorFunctionSpace(self.mesh, 'P', 2)
-        Q = FunctionSpace(self.mesh, 'P', 1)
+        self.V = V = VectorFunctionSpace(self.mesh, 'P', 2)
+        self.Q = Q = FunctionSpace(self.mesh, 'P', 1)
         T = FunctionSpace(self.mesh, 'P', 1)
 
         self.ds_ = Measure("ds", domain=self.mesh, subdomain_data=mf)
@@ -110,31 +113,29 @@ class CavityProblemSetup():
                                   TrialFunction(T))
 
         # boundary conditions
-        no_slip = Constant((0., 0))
-        topflow = Expression(("-x[0] * (x[0] - 1.0) * 6.0 * m", "0.0"),
-                             m=U_m, degree=2)
-
-        bc0 = DirichletBC(V, topflow, mf, bc_dict["top"])
-        bc1 = DirichletBC(V, no_slip, mf, bc_dict["left"])
-        bc2 = DirichletBC(V, no_slip, mf, bc_dict["bottom"])
-        bc3 = DirichletBC(V, no_slip, mf, bc_dict["right"])
+        self.no_slip = Constant((0., 0))
+        self.topflow = Expression(("-x[0] * (x[0] - 1.0) * 6.0 * m", "0.0"),
+                                  m=self.U_m, degree=2)
+        bc0 = DirichletBC(V, self.topflow, mf, self.bc_dict["top"])
+        bc1 = DirichletBC(V, self.no_slip, mf, self.bc_dict["left"])
+        bc2 = DirichletBC(V, self.no_slip, mf, self.bc_dict["bottom"])
+        bc3 = DirichletBC(V, self.no_slip, mf, self.bc_dict["right"])
         # bc4 = df.DirichletBC(Q, df.Constant(0), top)
         # bc3 = df.DirichletBC(T, df.Constant(800), top)
         self.bcu = [bc0, bc1, bc2, bc3]
-        # no boundary conditions for the pressure
-        # self.bcp = []
-        self.bcp = [DirichletBC(Q, Constant(0), mf, bc_dict["top"])]
+        self.bcp = [DirichletBC(Q, Constant(0), mf, self.bc_dict["top"])]
         self.bct = []
-        # self.bct = [DirichletBC(T, Constant(750), mf, bc_dict["top"])]
+        self.bct = [DirichletBC(T, Constant(self.t_feeder), mf,
+                                self.bc_dict["top"])]
 
         self.robin_boundary_terms = (
             self.k_btm*(self.t - self.t_amb)*self.vt*self.ds_(1)
             + self.k_rgt*(self.t - self.t_amb)*self.vt*self.ds_(2)
-            + self.k_top*(self.t - self.t_feeder)*self.vt*self.ds_(3)
+            # + self.k_top*(self.t - self.t_feeder)*self.vt*self.ds_(3)
             + self.k_lft*(self.t - self.t_amb)*self.vt*self.ds_(4))
         print("k, T", self.k_btm.values(), self.t_feeder.values())
         print("k, T", self.k_rgt.values(), self.t_amb.values())
-        print("k, T", self.k_top.values(), self.t_amb.values())
+        # print("k, T", self.k_top.values(), self.t_amb.values())
         print("k, T", self.k_lft.values(), self.t_amb.values())
 
         # set initial values
@@ -148,6 +149,37 @@ class CavityProblemSetup():
         self.t_.assign(self.t_1)
         return
 
+    def stokes(self):
+        P2 = VectorElement("CG", self.mesh.ufl_cell(), 2)
+        P1 = FiniteElement("CG", self.mesh.ufl_cell(), 1)
+        TH = P2 * P1
+        VQ = FunctionSpace(self.mesh, TH)
+        mf = self.mf
+        self.no_slip = Constant((0., 0))
+        self.topflow = Expression(("-x[0] * (x[0] - 1.0) * 6.0 * m", "0.0"),
+                                  m=self.U_m, degree=2)
+        bc0 = DirichletBC(VQ.sub(0), self.topflow, mf, self.bc_dict["top"])
+        bc1 = DirichletBC(VQ.sub(0), self.no_slip, mf, self.bc_dict["left"])
+        bc2 = DirichletBC(VQ.sub(0), self.no_slip, mf, self.bc_dict["bottom"])
+        bc3 = DirichletBC(VQ.sub(0), self.no_slip, mf, self.bc_dict["right"])
+        bc4 = DirichletBC(VQ.sub(1), Constant(0), mf, self.bc_dict["top"])
+        bcs = [bc0, bc1, bc2, bc3, bc4]
+
+        vup = TestFunction(VQ)
+        up = TrialFunction(VQ)
+        # the solution will be in here:
+        up_ = Function(VQ)
+
+        u, p = split(up)  # Trial
+        vu, vp = split(vup)  # Test
+        u_, p_ = split(up_)  # Function holding the solution
+        F = self.mu*inner(grad(vu), grad(u))*dx - inner(div(vu), p)*dx \
+            - inner(vp, div(u))*dx
+        solve(lhs(F) == rhs(F), up_, bcs=bcs)
+        self.u_.assign(project(u_, self.V))
+        self.p_.assign(project(p_, self.Q))
+        return
+
     def get_rho(self):
         return self.rho.vector().vec().array
 
@@ -155,7 +187,7 @@ class CavityProblemSetup():
         self.rho.vector().vec().array[:] = rho
 
     def get_mu(self):
-        return self.rho.vector().vec().array
+        return self.mu.vector().vec().array
 
     def set_mu(self, mu):
         self.mu.vector().vec().array[:] = mu

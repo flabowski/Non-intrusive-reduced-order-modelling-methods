@@ -159,7 +159,7 @@ class ChannelProblemSetup():
         self.rho = df.Constant(parameters["density [kg/m3]"])
         self.mu = df.Constant(parameters["viscosity [Pa*s]"])
         self.dt = df.Constant(parameters["dt [s]"])
-        self.g = 0.0
+        self.g = df.Constant((0, 0))
         self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)
         self.u_, self.p_ = df.Function(V), df.Function(Q)
         self.u_1, self.p_1 = df.Function(V), df.Function(Q)

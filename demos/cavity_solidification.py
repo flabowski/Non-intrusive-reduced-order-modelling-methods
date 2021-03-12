@@ -79,23 +79,25 @@ from finite_element_solver.schemes.convection_diffusion import (
 def Aluminum():
     import matplotlib as mpl
     mpl.use('Agg')
+    factor_rho = 1/2350.
+    factor_mu = 1000.
     k = 205  # W/(m K)
     cp = 0.91 * 1000  # kJ/(kg K) *1000 = J/(kg K)
     rho = 2350  # kg /m3
     alpha = k/(cp*rho)
     # all the IO and printing happens here
-    my_parameters = {"Diffusivity [-]": alpha,
+    my_parameters = {"Diffusivity [-]": 0.0001,
                      "viscosity solid [Pa*s]": 0.1,  # arbitrary.
                      "characteristic length [m]": 1.0,
-                     "ambient temperature [°C]": 25,
-                     "initial temperature [°C]": 800,
-                     "temperature feeder [°C]": 800,
+                     "ambient temperature [°C]": 600,
+                     "initial temperature [°C]": 670,
+                     "temperature feeder [°C]": 670,
                      "thermal conductivity top [W/(m K)]": 0.,
                      "thermal conductivity left [W/(m K)]": 0.,
                      "thermal conductivity bottom [W/(m K)]": 0.,
                      "thermal conductivity right [W/(m K)]": 0.,
-                     "mean velocity lid [m/s]": 0.0,
-                     "gravity [m/s²]": 9.81,
+                     "mean velocity lid [m/s]": 1.0,  # 0.00001
+                     "gravity [m/s²]": 9.81*0,
                      "dt [s]": 0.01
                      }
     create_cavity_mesh(lcar=0.02)
@@ -103,14 +105,17 @@ def Aluminum():
 
     tvs = ImplicitTentativeVelocityStep(my_domain)
     # tvs = ExplicitTentativeVelocityStep(my_domain)
-    ps = PressureStep(my_domain)
+    ps = PressureStep(my_domain, penalization=1e-7)
     vcs = VelocityCorrectionStep(my_domain)
-    cd = ConvectionDiffusion(my_domain)
+    cd = ConvectionDiffusion(my_domain, k=0.5)
 
     mu_new = mu_Al(my_domain.get_t(), my_parameters["viscosity solid [Pa*s]"])
     rho_new = rho_Al(my_domain.get_t())
-    my_domain.set_mu(mu_new)
-    my_domain.set_rho(rho_new)
+    my_domain.set_mu(mu_new*factor_mu)
+    my_domain.set_rho(rho_new*factor_rho)
+    my_domain.stokes()
+    my_domain.u_1.assign(my_domain.u_)
+    my_domain.p_1.assign(my_domain.p_)
 
     rho = np.mean(my_domain.get_rho())
     U = my_parameters["mean velocity lid [m/s]"]
@@ -123,26 +128,29 @@ def Aluminum():
     print("dt = ", my_domain.get_dt())
 
     print(np.unique(my_domain.ds_(3).subdomain_data().array()))
-    my_domain.k_lft.assign(.000)
-    my_domain.k_rgt.assign(.00)
-    my_domain.k_btm.assign(.00)
+    my_domain.k_lft.assign(.0001)
+    my_domain.k_rgt.assign(.001)
+    my_domain.k_btm.assign(.001)
 
-    for n in trange(10000):
+    my_domain.k_top.assign(.001)
+
+    for n in trange(100000):
         tvs.solve(reassemble_A=True)
         ps.solve()
         vcs.solve()
         cd.solve()
+
         my_domain.u_1.assign(my_domain.u_)
         my_domain.p_1.assign(my_domain.p_)
         my_domain.t_1.assign(my_domain.t_)
         mu_new = mu_Al(my_domain.get_t(),
                        my_parameters["viscosity solid [Pa*s]"])
         rho_new = rho_Al(my_domain.get_t())
-        my_domain.set_mu(mu_new)
-        my_domain.set_rho(rho_new)
+        my_domain.set_mu(mu_new*factor_mu)
+        my_domain.set_rho(rho_new*factor_rho)
         # print(np.min(my_domain.get_t()), np.max(my_domain.get_t()))
         # print(np.min(my_domain.get_rho()), np.max(my_domain.get_rho()))
-        if (n % 50) == 0:
+        if (n % 100) == 0:
             fig, ax = my_domain.plot()
             plt.savefig("tst{:.0f}.png".format(n))
             plt.close()
