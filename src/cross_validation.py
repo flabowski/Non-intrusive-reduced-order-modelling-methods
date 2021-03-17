@@ -18,6 +18,9 @@ import pandas as pd
 # from mayavi import mlab
 np.set_printoptions(suppress=True)
 plot_width = 16
+# TODO: move to paraview
+# change plotting routine args
+
 
 
 def select_random_snapsots(U, t, snapshots_per_dataset):
@@ -59,6 +62,7 @@ def plot_up(u, v, p, x, y, tri, umin=None, umax=None, pmin=None, pmax=None):
 
     c_ticks = np.linspace(umin, umax, num=5, endpoint=True)
     norm = mpl.colors.Normalize(vmin=umin, vmax=umax)
+    print(x.shape, y.shape, u.shape, v.shape)
     cp1 = ax1.quiver(x, y, u, v, cmap=cmap, color=cmap(norm(magnitude)))
     cbar1 = plt.colorbar(cp1, ax=ax1, ticks=norm(c_ticks))
     cbar1.ax.set_yticklabels(["{:.2f}".format(i) for i in c_ticks])
@@ -77,6 +81,8 @@ def plot_up(u, v, p, x, y, tri, umin=None, umax=None, pmin=None, pmax=None):
 def plot_eigenfaces(U, x, y, tri):
     for i in range(3):
         u_eig, v_eig, p_eig = np.split(U.numpy()[:, i], 3)
+        # TODO
+        u_eig, v_eig, p_eig, t_eig = np.split(U.numpy()[:, i], 4) # # # # # # #
         fig, ax = plot_up(u_eig, v_eig, p_eig, x, y, tri)
         ttl = ("eigen vector #{:.0f}".format(i))
         plt.suptitle(ttl)
@@ -84,7 +90,7 @@ def plot_eigenfaces(U, x, y, tri):
     return
 
 
-def load_snapshots(path, snapshots_per_dataset):
+def load_snapshots_cylinder(path, snapshots_per_dataset):
     files = [f for f in os.listdir(path) if f.endswith(".pickle")]
     data = pickle.load(open(path+files[0], "rb"))
 
@@ -107,6 +113,40 @@ def load_snapshots(path, snapshots_per_dataset):
               data["Re"], data["rho"], data["mu"])
     U.shape = (3*n_nodes, n_datasets, snapshots_per_dataset)
     return U, t, mu, data["x"], data["y"], data["tri"]
+
+
+def load_snapshots_cavity(path, snapshots_per_dataset):
+    x = np.load(path+"x.npy")
+    y = np.load(path+"y.npy")
+    tri = np.load(path+"tri.npy")
+    time = np.load(path+"time.npy")
+    Ts = np.array([400, 425, 450, 475, 500, 525, 550, 575, 600, 625])
+    Ts = np.array([400, 425, 450, 475, 600])
+    n_nodes = len(x)
+    n_datasets = len(Ts)
+    snapshots_per_dataset = len(time)
+    print("n_nodes", n_nodes)
+    print("n_datasets", n_datasets)
+    print("snapshots_per_dataset", snapshots_per_dataset)
+    U = np.zeros((4, n_nodes, n_datasets, snapshots_per_dataset))
+    t = np.zeros((n_datasets, snapshots_per_dataset))
+    # mu = np.zeros((n_datasets))
+    for i, t_amb in enumerate(Ts):
+        # t_amb = 600
+        # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
+        uv = np.load(path+"Tamb{:.0f}_velocity.npy".format(t_amb)).T.copy()
+        uv.shape = (2, n_nodes, snapshots_per_dataset)
+        u, v = uv
+        p = np.load(path+"Tamb{:.0f}_pressure.npy".format(t_amb)).T
+        t = np.load(path+"Tamb{:.0f}_temperature.npy".format(t_amb)).T
+        U[0, :, i, :] = u
+        U[1, :, i, :] = v
+        U[2, :, i, :] = p
+        U[3, :, i, :] = t
+        t[i] = time
+        print(t_amb, ":\n", len(time), len(t[i]))
+    U.shape = (4*n_nodes, n_datasets, snapshots_per_dataset)
+    return U, t, Ts, x, y, tri
 
 
 def create_ROM(X):
@@ -266,6 +306,11 @@ def normalize_phase(V, time, mu):
 
 
 if __name__ == "__main__":
+    # TODO: normalize data
+    # TODO: structure. generalize!
+    load_snapshots = load_snapshots_cylinder
+    load_snapshots = load_snapshots_cavity
+    path = "C:/Users/florianma/Documents/data/freezing_cavity/"
     # arrays are shaped (n_nodes, n_datasets, snapshots_per_dataset)
     # to allow for a trigonometric interpolation, the oscillations are repeated
     # along the time axis
@@ -275,18 +320,23 @@ if __name__ == "__main__":
     # U_x snapshot matrix. SVD: X = U*S*V
 
     n_modes = 200
-    path = "C:/Users/florianma/Documents/data/flow_around_cylinder/"
 
     plt.close("all")
     X_all, _t_all_, mu, x, y, tri = load_snapshots(path, 800)
-    X, _t_ = select_random_snapsots(X_all, _t_all_, 150)
+    X, _t_ = select_random_snapsots(X_all, _t_all_, 200)
     S_full, U_full, V_full, M_full = create_ROM(X)
-    phase, period = normalize_phase(V_full, _t_, mu)
-    t_all = _t_all_ - phase[:, None]
-    t = _t_ - phase[:, None]
+    # FIXME
+    # phase, period = normalize_phase(V_full, _t_, mu)
+    # t_all = _t_all_ - phase[:, None]
+    # t = _t_ - phase[:, None]
+    t_all = _t_all_
+    t = _t_
 
     X_mean = np.mean(np.mean(X, axis=1), axis=1)
-    u_m, v_m, p_m = np.split(X_mean, 3)
+    print(X_mean.shape)
+    # FIXME
+    u_m, v_m, p_m, t_m = np.split(X_mean, 4)
+    print(u_m.shape)
     fig, ax = plot_up(u_m, v_m, p_m, x, y, tri)
     plt.show()
     plot_eigenfaces(U_full, x, y, tri)
@@ -294,7 +344,7 @@ if __name__ == "__main__":
 
     n_datasets = len(t)
     trainingset = np.empty((n_datasets,), dtype=np.bool)
-    n_ss = [3, 5, 10, 20, 50]  # , 100, 200]
+    n_ss = [3, 5, 10, 20, 50, 100, 200]
     mse = np.zeros((len(n_ss), n_datasets))
     x_bp = np.zeros((len(n_ss), n_datasets), dtype=np.int32)
     set_nr = np.zeros((len(n_ss), n_datasets), dtype=np.int32)
@@ -302,8 +352,11 @@ if __name__ == "__main__":
         n_modes = snapshots_per_dataset
         X, t = select_random_snapsots(X_all, t_all, snapshots_per_dataset)
         n_testset = (n_datasets-1)*snapshots_per_dataset
-        x1 = mu[:, None] * np.ones((n_datasets, 3*snapshots_per_dataset))
-        x2 = np.c_[t-period[:, None], t, t+period[:, None]]  # 9, 3*150
+        # FIXME: no longer periodic
+        # x1 = mu[:, None] * np.ones((n_datasets, 3*snapshots_per_dataset))
+        # x2 = np.c_[t-period[:, None], t, t+period[:, None]]  # 9, 3*150
+        x1 = mu[:, None] * np.ones((n_datasets, snapshots_per_dataset))
+        x2 = t  # 9, 150
         for i in range(1, n_datasets-1):
             s, e = i, (i+1)
             trainingset[:] = True
@@ -330,9 +383,11 @@ if __name__ == "__main__":
             V_interpolated = np.zeros((snapshots_per_dataset, n_modes))
             n_trainingsets = trainingset.sum()
             for k in range(n_modes):
+                # FIXME
                 d_ = V.numpy()[:, k].reshape(n_trainingsets,
                                              snapshots_per_dataset).copy()
-                d = np.c_[d_, d_, d_]  # 8, 3*150 repeats each oscillation
+                # d = np.c_[d_, d_, d_]  # 8, 3*150 repeats each oscillation
+                d = d_
                 points = np.c_[x1_train.ravel(), x2_train.ravel()]
                 di = griddata(points, d.ravel(),
                               (x1_validation, x2_validation), method='linear')
