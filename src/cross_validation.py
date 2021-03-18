@@ -22,17 +22,24 @@ plot_width = 16
 # change plotting routine args
 
 
-
-def select_random_snapsots(U, t, snapshots_per_dataset):
-    n, n_datasets, N = U.shape
-    U_resized = np.empty((n, n_datasets, snapshots_per_dataset))
-    t_resized = np.empty((n_datasets, snapshots_per_dataset))
-    for i in range(n_datasets):
-        inds = np.sort(np.random.randint(low=0, high=N,
-                                         size=snapshots_per_dataset))
-        U_resized[:, i, :] = U[:, i, inds]
-        t_resized[i, :] = t[i, inds]
-    return U_resized, t_resized
+def select_random_snapsots(U, xi, dimensions, d1_new):
+    [[s1, s2], [d1, d2]] = dimensions
+    n, m = s1*s2, d1*d2
+    D = len(dimensions[1])
+    U.shape = (n, d1, d2)
+    xi.shape = (d1, d2, D)
+    U_resized = np.empty((n, d1_new, d2))
+    xi_resized = np.empty((d1_new, d2, D))
+    for i in range(d2):
+        inds = np.sort(np.random.randint(low=0, high=d1, size=d1_new))
+        inds[0], inds[-1] = 0, d1-1  # we need the edges for the interpolation
+        U_resized[..., i] = U[:, inds, i]
+        xi_resized[:, i, :] = xi[inds, i, :]
+    U.shape = (n, m)
+    xi.shape = (m, D)
+    U_resized.shape = (n, d1_new*d2)
+    xi_resized.shape = (d1_new*d2, D)
+    return U_resized, xi_resized
 
 
 def xxxxx(file, snapshots_per_dataset):
@@ -62,7 +69,6 @@ def plot_up(u, v, p, x, y, tri, umin=None, umax=None, pmin=None, pmax=None):
 
     c_ticks = np.linspace(umin, umax, num=5, endpoint=True)
     norm = mpl.colors.Normalize(vmin=umin, vmax=umax)
-    print(x.shape, y.shape, u.shape, v.shape)
     cp1 = ax1.quiver(x, y, u, v, cmap=cmap, color=cmap(norm(magnitude)))
     cbar1 = plt.colorbar(cp1, ax=ax1, ticks=norm(c_ticks))
     cbar1.ax.set_yticklabels(["{:.2f}".format(i) for i in c_ticks])
@@ -80,9 +86,9 @@ def plot_up(u, v, p, x, y, tri, umin=None, umax=None, pmin=None, pmax=None):
 
 def plot_eigenfaces(U, x, y, tri):
     for i in range(3):
-        u_eig, v_eig, p_eig = np.split(U.numpy()[:, i], 3)
+        # u_eig, v_eig, p_eig = np.split(U.numpy()[:, i], 3)
         # TODO
-        u_eig, v_eig, p_eig, t_eig = np.split(U.numpy()[:, i], 4) # # # # # # #
+        u_eig, v_eig, p_eig, t_eig = np.split(U.numpy()[:, i], 4)
         fig, ax = plot_up(u_eig, v_eig, p_eig, x, y, tri)
         ttl = ("eigen vector #{:.0f}".format(i))
         plt.suptitle(ttl)
@@ -91,6 +97,7 @@ def plot_eigenfaces(U, x, y, tri):
 
 
 def load_snapshots_cylinder(path, snapshots_per_dataset):
+    # FIXME: rename according to convention
     files = [f for f in os.listdir(path) if f.endswith(".pickle")]
     data = pickle.load(open(path+files[0], "rb"))
 
@@ -99,7 +106,7 @@ def load_snapshots_cylinder(path, snapshots_per_dataset):
 
     U = np.zeros((3, n_nodes, n_datasets, snapshots_per_dataset))
     t = np.zeros((n_datasets, snapshots_per_dataset))
-    mu = np.zeros((n_datasets))
+    mu = np.zeros((n_datasets))  # FIXME! make it shaped n_datasets, snapshots_per_dataset
     for i, file in enumerate(files):
         data = pickle.load(open(path+file, "rb"))
         N = len(data["time"])
@@ -115,54 +122,60 @@ def load_snapshots_cylinder(path, snapshots_per_dataset):
     return U, t, mu, data["x"], data["y"], data["tri"]
 
 
-def load_snapshots_cavity(path, snapshots_per_dataset):
+def load_snapshots_cavity(path):
     x = np.load(path+"x.npy")
     y = np.load(path+"y.npy")
     tri = np.load(path+"tri.npy")
-    time = np.load(path+"time.npy")
+    time = np.load(path+"Tamb400_time.npy")
     Ts = np.array([400, 425, 450, 475, 500, 525, 550, 575, 600, 625])
-    Ts = np.array([400, 425, 450, 475, 600])
-    n_nodes = len(x)
-    n_datasets = len(Ts)
-    snapshots_per_dataset = len(time)
-    print("n_nodes", n_nodes)
-    print("n_datasets", n_datasets)
-    print("snapshots_per_dataset", snapshots_per_dataset)
-    U = np.zeros((4, n_nodes, n_datasets, snapshots_per_dataset))
-    t = np.zeros((n_datasets, snapshots_per_dataset))
-    # mu = np.zeros((n_datasets))
-    for i, t_amb in enumerate(Ts):
+    Ts = np.array([400, 500, 600])
+    s1 = 4  # u, v, p and T
+    s2 = len(x)
+    d1 = len(time)
+    d2 = len(Ts)
+    n, m = s1*s2, d1*d2
+    dimensions = [[s1, s2], [d1, d2]]
+    D = len(dimensions[1])  # time and wall temperature
+    print("n physical quantities", s1)
+    print("n_nodes", s2)
+    print("snapshots_per_dataset", d1)
+    print("n_datasets", d2)
+    U = np.zeros((s1, s2, d1, d2))
+    xi = np.zeros((d1, d2, D))
+    for i, t_amb in enumerate(Ts):  # iteration along d2
         # t_amb = 600
         # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
         uv = np.load(path+"Tamb{:.0f}_velocity.npy".format(t_amb)).T.copy()
-        uv.shape = (2, n_nodes, snapshots_per_dataset)
+        uv.shape = (2, s2, d1)
         u, v = uv
+        time = np.load(path+"Tamb{:.0f}_time.npy".format(t_amb))  # d1
         p = np.load(path+"Tamb{:.0f}_pressure.npy".format(t_amb)).T
-        t = np.load(path+"Tamb{:.0f}_temperature.npy".format(t_amb)).T
-        U[0, :, i, :] = u
-        U[1, :, i, :] = v
-        U[2, :, i, :] = p
-        U[3, :, i, :] = t
-        t[i] = time
-        print(t_amb, ":\n", len(time), len(t[i]))
-    U.shape = (4*n_nodes, n_datasets, snapshots_per_dataset)
-    return U, t, Ts, x, y, tri
+        temp = np.load(path+"Tamb{:.0f}_temperature.npy".format(t_amb)).T
+        U[0, :, :, i] = u
+        U[1, :, :, i] = v
+        U[2, :, :, i] = p
+        U[3, :, :, i] = temp
+        xi[:, i, 0] = time
+        xi[:, i, 1] = t_amb
+        print(t_amb, ":", p.shape, len(time))
+    U.shape = (n, m)
+    xi.shape = (m, D)
+    return U, xi, x, y, tri, dimensions
 
 
-def create_ROM(X):
-    # POD
-    n, n_datasets, n_snapshots_per_dataset = X.shape
-    tensor = X.copy()  # need to copy to make sure array is contiguous
-    tensor.shape = n, n_datasets*n_snapshots_per_dataset
+# def create_ROM(X):
+#     # POD
+#     n, m = X.shape
+#     tensor = X.copy()  # need to copy to make sure array is contiguous
 
-    tic = timeit.default_timer()
-    mean_tensor = tf.reduce_mean(tensor, axis=1, keepdims=True)
-    mean_centered_data = tf.subtract(tensor, mean_tensor)
-    S, U, V = tf.linalg.svd(mean_centered_data, full_matrices=False)
-    toc = timeit.default_timer()
-    print(toc-tic)
+#     tic = timeit.default_timer()
+#     # mean_tensor = tf.reduce_mean(tensor, axis=1, keepdims=True)
+#     # mean_centered_data = tf.subtract(tensor, mean_tensor)
+#     S, U, V = tf.linalg.svd(mean_centered_data, full_matrices=False)
+#     toc = timeit.default_timer()
+#     print(toc-tic)
 
-    return S, U, V, mean_tensor
+#     return S, U, V, mean_tensor
 
 
 def cylinderwall(x, y):
@@ -173,7 +186,8 @@ def cylinderwall(x, y):
     return (in_circle)
 
 
-def plot_mode_amplitude(S, V, t, mu):
+def plot_mode_amplitude(S, V, xi):
+    t = xi[:, 0]
     # lbl = ["velocity in x direction", "velocity in y direction", "pressure"]
     n = 25
     fig, axs = plt.subplots(2, 1, sharex=True,
@@ -305,6 +319,82 @@ def normalize_phase(V, time, mu):
     return phase, period
 
 
+def normalise(X):
+    print(X.shape)
+    X_min = X.min(axis=1)[:, None]  # n
+    X_max = X.max(axis=1)[:, None]  # n
+    print(X_min.shape, X_max.shape)
+    X_range = X_max - X_min
+    X_range[X_range < 1e-6] = 1e-6
+    X_n = (X-X_min)/X_range
+    print(X_n.min(), X_n.max())
+    return X_n, X_min, X_range
+
+
+def split_off(set_i, X, xi, dims):
+    [[s1, s2], [d1, d2]] = dims
+    X.shape = (s1, s2, d1, d2)
+    xi.shape = (d1, d2, 2)
+
+    i_train = np.delete(np.arange(d2), set_i)
+    X_train = X[..., i_train].copy()
+    X_valid = X[..., set_i].copy()
+    xi_train = xi[:, i_train, :].copy()
+    xi_valid = xi[:, set_i, :].copy()
+
+    X.shape = (s1*s2, d1*d2)
+    X_train.shape = (s1*s2, d1*(d2-1))
+    X_valid.shape = (s1*s2, d1*1)
+    xi.shape = (d1*d2, 2)
+    xi_train.shape = (d1*(d2-1), 2)
+    xi_valid.shape = (d1*1, 2)
+    return X_train, X_valid, xi_train, xi_valid
+
+
+def interpolateV(points, values, xi):
+    """
+    Parameters
+    ----------
+    points : 2-D ndarray of floats with shape (m, D), or length D tuple of 1-D ndarrays with shape (m,).
+        Data point coordinates.
+    values : ndarray of float or complex, shape (m, r). V Matrix from SVD (not V.T!)
+        Data values.
+    xi : 2-D ndarray of floats with shape (m, D), or length D tuple of ndarrays broadcastable to the same shape.
+        Points at which to interpolate data.
+
+    Returns
+    -------
+    V_interpolated : ndarray
+        Array of interpolated values.
+
+    n: n_modes = n_nodes*4 (u,v,p,t)
+    D: 2 (time and Tamb or mu)
+    r: 12 reduced rank
+    """
+    m, D = points.shape
+    print("m, D", m, D)
+    m, r = values.shape  # m, n_modes
+    print("m, r", m, r)
+    d1, D = xi.shape  # snapshots_per_dataset
+    print("d1, D", d1, D)
+    d2 = m // d1  # n_trainingsets
+    assert m == d1*d2, "?"
+
+    V_interpolated = np.zeros((d1, r))
+    for i in range(r):
+        vals = values[:, i].numpy()  # .copy() ?
+        V_interpolated[:, i] = griddata(points, vals, xi, method='linear')  # last 3 entries
+    return V_interpolated
+
+
+def ROM(S, U, V, r):
+    U_hat = U.numpy()[:, :r]  # (n, r)
+    S_hat = S.numpy()[:r]  # (r, r) / (r,) wo  non zero elements
+    V_hat = V[:, :r]  # (d1, r)
+    X_approx = np.dot(U_hat*S_hat, V_hat.T)  # n, d1
+    return X_approx
+
+
 if __name__ == "__main__":
     # TODO: normalize data
     # TODO: structure. generalize!
@@ -322,51 +412,104 @@ if __name__ == "__main__":
     n_modes = 200
 
     plt.close("all")
-    X_all, _t_all_, mu, x, y, tri = load_snapshots(path, 800)
-    X, _t_ = select_random_snapsots(X_all, _t_all_, 200)
-    S_full, U_full, V_full, M_full = create_ROM(X)
+    X_all, _xi_all_, x, y, tri, dims_all = load_snapshots(path)
+    print(dims_all)
+    [[s1, s2], [d1_all, d2]] = dims_all
+    d1_new = 75
+    print("n physical quantities", s1)
+    print("n_nodes", s2)
+    print("snapshots_per_dataset", d1_all, "reduced to", d1_new)
+    print("n_datasets", d2)
+    print("n, m", s1*s2, d1_all*d2, X_all.shape)
+    X, xi = select_random_snapsots(X_all, _xi_all_, dims_all, d1_new)
+    dims = [[s1, s2], [d1_new, d2]]
+    print("n, m", s1*s2, d1_new*d2, X.shape)
+    X_n, X_min, X_range = normalise(X)
+    S_full, U_full, V_full = tf.linalg.svd(X_n, full_matrices=False)
+    # S_full, U_full, V_full, M_full = create_ROM(X)
     # FIXME
     # phase, period = normalize_phase(V_full, _t_, mu)
     # t_all = _t_all_ - phase[:, None]
     # t = _t_ - phase[:, None]
-    t_all = _t_all_
-    t = _t_
+    # t_all = _t_all_
+    # t = _t_
 
-    X_mean = np.mean(np.mean(X, axis=1), axis=1)
-    print(X_mean.shape)
+    # X_mean = np.mean(np.mean(X, axis=1), axis=1)
+    # print(X_mean.shape)
     # FIXME
-    u_m, v_m, p_m, t_m = np.split(X_mean, 4)
-    print(u_m.shape)
-    fig, ax = plot_up(u_m, v_m, p_m, x, y, tri)
+    # u_m, v_m, p_m, t_m = np.split(X_mean, 4)
+    # print(u_m.shape)
+    # fig, ax = plot_up(u_m, v_m, p_m, x, y, tri)
+    # plt.show()
+    u, v, p, t = np.split(X_all[:, 0], 4)
+    fig, ax = plot_up(u, v, p, x, y, tri)
     plt.show()
-    plot_eigenfaces(U_full, x, y, tri)
-    plot_mode_amplitude(S_full, V_full, t, mu)
+    print(U_full.shape)
 
-    n_datasets = len(t)
-    trainingset = np.empty((n_datasets,), dtype=np.bool)
-    n_ss = [3, 5, 10, 20, 50, 100, 200]
-    mse = np.zeros((len(n_ss), n_datasets))
-    x_bp = np.zeros((len(n_ss), n_datasets), dtype=np.int32)
-    set_nr = np.zeros((len(n_ss), n_datasets), dtype=np.int32)
-    for ns, snapshots_per_dataset in enumerate(n_ss):
-        n_modes = snapshots_per_dataset
-        X, t = select_random_snapsots(X_all, t_all, snapshots_per_dataset)
-        n_testset = (n_datasets-1)*snapshots_per_dataset
+    plot_eigenfaces(U_full, x, y, tri)
+    plot_mode_amplitude(S_full, V_full, xi)
+
+    # set_i = 0
+    # X_train, X_valid, xi_train, xi_valid = split_off(set_i, X_n, xi, dims)
+    # asd
+    # n_datasets = len(t)
+    # trainingset = np.empty((d2,), dtype=np.bool)
+    n_ss = [30, 5, 10, 20, 50, 100, 200]
+    mse = np.zeros((len(n_ss), d2))
+    # x_bp = np.zeros((len(n_ss), d2), dtype=np.int32)
+    # set_nr = np.zeros((len(n_ss), d2), dtype=np.int32)
+    for ns, d1_new in enumerate(n_ss):
+        X, xi = select_random_snapsots(X_all, _xi_all_, dims_all, d1_new)
+        dims = [[s1, s2], [d1_new, d2]]
+        r = d1_new
+
+        # X, t = select_random_snapsots(X_all, t_all, d1_new)
+        # n_testset = (d2-1)*d1_new
         # FIXME: no longer periodic
-        # x1 = mu[:, None] * np.ones((n_datasets, 3*snapshots_per_dataset))
+        # x1 = mu[:, None] * np.ones((n_datasets, 3*d1_new))
         # x2 = np.c_[t-period[:, None], t, t+period[:, None]]  # 9, 3*150
-        x1 = mu[:, None] * np.ones((n_datasets, snapshots_per_dataset))
-        x2 = t  # 9, 150
-        for i in range(1, n_datasets-1):
-            s, e = i, (i+1)
-            trainingset[:] = True
-            trainingset[s:e] = False
-            validationset = ~trainingset
-            S, U, V, M = create_ROM(X[:, trainingset])
-            x1_train = x1[trainingset, :]
-            x2_train = x2[trainingset, :]  # 8, 3*150
-            x1_validation = mu[i] * np.ones((snapshots_per_dataset))
-            x2_validation = t[i, :]
+        # x1 = mu[:, None] * np.ones((d2, d1_new))
+        # x2 = t  # 9, 150
+        for i in range(1, d2-1):  # we can't extrapolate
+            X_train, X_valid, xi_train, xi_valid = split_off(i, X, xi, dims)
+            X_n, X_min, X_range = normalise(X_train)
+            S, U, V = tf.linalg.svd(X_n, full_matrices=False)
+            print(xi_train.shape, V.shape, xi_valid.shape)
+            V_new = interpolateV(points=xi_train, values=V, xi=xi_valid)
+            X_rom = ROM(S, U, V_new, r)
+
+            X_valid_n = (X_valid-X_min) / X_range
+            err = ((X_rom - X_valid_n)**2).mean()
+
+
+
+            X_scaled = X_rom*X_range + X_min
+
+            for t in range(4):
+                u, v, p, t = np.split(X_scaled[:, t], 4)
+                fig, ax = plot_up(u, v, p, x, y, tri)
+                plt.show()
+
+            # X_valid
+            asd
+            # U_hat = U.numpy()[:, :r]  # (n, r)
+            # S_hat = S.numpy()[:r]  # (r, r) / (r,) wo  non zero elements
+            # V_hat = V_interpolated[:, :r]  # (d1, r)
+            # X_rom = np.dot(U_hat*S_hat, V_hat.T)  # n, d1
+            # X_scaled = X_rom*X_range + X_min
+
+
+
+
+            # s, e = i, (i+1)
+            # trainingset[:] = True
+            # trainingset[s:e] = False
+            # validationset = ~trainingset
+            # S, U, V, M = create_ROM(X[:, trainingset])
+            # x1_train = x1[trainingset, :]
+            # x2_train = x2[trainingset, :]  # 8, 3*150
+            # x1_validation = mu[i] * np.ones((d1_new))
+            # x2_validation = t[i, :]
 
             # fig, (ax1) = plt.subplots(1, sharex=True,
             #                           figsize=(plot_width/2.54, 10/2.54))
@@ -379,30 +522,29 @@ if __name__ == "__main__":
             # plt.suptitle("Parameter space")
             # plt.legend()
             # plt.show()
-
-            V_interpolated = np.zeros((snapshots_per_dataset, n_modes))
-            n_trainingsets = trainingset.sum()
-            for k in range(n_modes):
-                # FIXME
-                d_ = V.numpy()[:, k].reshape(n_trainingsets,
-                                             snapshots_per_dataset).copy()
-                # d = np.c_[d_, d_, d_]  # 8, 3*150 repeats each oscillation
-                d = d_
-                points = np.c_[x1_train.ravel(), x2_train.ravel()]
-                di = griddata(points, d.ravel(),
-                              (x1_validation, x2_validation), method='linear')
-                # rbfi = Rbf(x1_train.ravel(), x2_train.ravel(), d.ravel())
-                # di = rbfi(x1_validation, x2_validation)
-                V_interpolated[:, k] = di.copy()
+            # points = np.c_[x1_train.ravel(), x2_train.ravel()]
+            # n_trainingsets = trainingset.sum()
+            # for k in range(n_modes):
+            #     # FIXME
+            #     d_ = V.numpy()[:, k].reshape(n_trainingsets,
+            #                                  d1_new).copy()
+            #     # d = np.c_[d_, d_, d_]  # 8, 3*150 repeats each oscillation
+            #     d = d_
+            #     points = np.c_[x1_train.ravel(), x2_train.ravel()]
+            #     di = griddata(points, d.ravel(),
+            #                   (x1_validation, x2_validation), method='linear')
+            #     # rbfi = Rbf(x1_train.ravel(), x2_train.ravel(), d.ravel())
+            #     # di = rbfi(x1_validation, x2_validation)
+            #     V_interpolated[:, k] = di.copy()
             U_hat = U.numpy()[:, :n_modes]  # (n, r)
             S_hat = S.numpy()[:n_modes]  # (r, r) / (r,) wo  non zero elements
             V_hat = V_interpolated  # (r, m)
             res = np.dot(U_hat, S_hat[:, None]*V_hat.T) + M.numpy()  # (n, m)
             mse[ns, i] = ((X[:, i, :] - res)**2).mean()
-            x_bp[ns, i] = snapshots_per_dataset
+            x_bp[ns, i] = d1_new
             print(i, mse[ns, i])
 
-        if mu[i] == .002 and snapshots_per_dataset == 100:
+        if mu[i] == .002 and d1_new == 100:
             u_int, v_int, p_int = np.split(res, 3)
             u_orig, v_orig, p_orig = np.split(X[:, i, :], 3)
             for ts in [0, 15]:
