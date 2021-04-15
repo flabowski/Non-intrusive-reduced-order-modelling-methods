@@ -13,7 +13,7 @@ from dolfin import (Function, DirichletBC, Expression, TestFunction,
                     TrialFunction, Mesh, FunctionSpace, Constant, Measure,
                     VectorFunctionSpace, XDMFFile, MeshValueCollection, cpp)
 from dolfin import (VectorElement, FiniteElement, inner, grad, dx, div, solve,
-                    lhs, rhs, split, project)
+                    lhs, rhs, split, project, dot)
 from mpi4py import MPI
 import meshio
 from finite_element_solver.domains.cylinder import create_entity_mesh
@@ -100,7 +100,7 @@ class CavityProblemSetup():
 
         self.V = V = VectorFunctionSpace(self.mesh, 'P', 2)
         self.Q = Q = FunctionSpace(self.mesh, 'P', 1)
-        T = FunctionSpace(self.mesh, 'P', 1)
+        self.T = T = FunctionSpace(self.mesh, 'P', 1)
 
         self.ds_ = Measure("ds", domain=self.mesh, subdomain_data=mf)
         self.vu, self.vp, self.vt = (TestFunction(V), TestFunction(Q),
@@ -124,9 +124,10 @@ class CavityProblemSetup():
         # bc3 = df.DirichletBC(T, df.Constant(800), top)
         self.bcu = [bc0, bc1, bc2, bc3]
         self.bcp = [DirichletBC(Q, Constant(0), mf, self.bc_dict["top"])]
+        self.bcp = []
         self.bct = []
-        self.bct = [DirichletBC(T, Constant(self.t_feeder), mf,
-                                self.bc_dict["top"])]
+        # self.bct = [DirichletBC(T, Constant(self.t_feeder), mf,
+        #                         self.bc_dict["top"])]
 
         self.robin_boundary_terms = (
             self.k_btm*(self.t - self.t_amb)*self.vt*self.ds_(1)
@@ -162,8 +163,8 @@ class CavityProblemSetup():
         bc1 = DirichletBC(VQ.sub(0), self.no_slip, mf, self.bc_dict["left"])
         bc2 = DirichletBC(VQ.sub(0), self.no_slip, mf, self.bc_dict["bottom"])
         bc3 = DirichletBC(VQ.sub(0), self.no_slip, mf, self.bc_dict["right"])
-        bc4 = DirichletBC(VQ.sub(1), Constant(0), mf, self.bc_dict["top"])
-        bcs = [bc0, bc1, bc2, bc3, bc4]
+        # bc4 = DirichletBC(VQ.sub(1), Constant(0), mf, self.bc_dict["top"])
+        bcs = [bc0, bc1, bc2, bc3]
 
         vup = TestFunction(VQ)
         up = TrialFunction(VQ)
@@ -174,10 +175,17 @@ class CavityProblemSetup():
         vu, vp = split(vup)  # Test
         u_, p_ = split(up_)  # Function holding the solution
         F = self.mu*inner(grad(vu), grad(u))*dx - inner(div(vu), p)*dx \
-            - inner(vp, div(u))*dx
+            - inner(vp, div(u))*dx + dot(self.g*self.rho, vu)*dx
         solve(lhs(F) == rhs(F), up_, bcs=bcs)
         self.u_.assign(project(u_, self.V))
         self.p_.assign(project(p_, self.Q))
+        return
+
+    def initial_condition_from_file(self, path_u, path_p):
+        f_in = XDMFFile(path_u)
+        f_in.read_checkpoint(self.u_, "f", 0)
+        f_in = XDMFFile(path_p)
+        f_in.read_checkpoint(self.p_, "f", 0)
         return
 
     def get_rho(self):
@@ -263,7 +271,7 @@ class CavityProblemSetup():
         ax3.set_aspect("equal")
         ax4.set_aspect("equal")
         ax5.set_aspect("equal")
-        ax1.set_title("velocity\n{:.4f} ... {:.4f} m/s".format(
+        ax1.set_title("velocity\n{:.4f} ... {:.5f} m/s".format(
             magnitude.min(), magnitude.max()))
         ax2.set_title("pressure")
         ax3.set_title("temperature")

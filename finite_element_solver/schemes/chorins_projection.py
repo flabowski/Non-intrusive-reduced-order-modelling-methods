@@ -62,8 +62,8 @@ class ImplicitTentativeVelocityStep():
 
         acceleration = rho * inner((u - u_1) / dt, vu) * dx
         pressure = inner(p_1, div(vu)) * dx - dot(p_1 * n, vu) * ds
-        body_force = dot(g*rho, vu)*dx
-            # + dot(Constant((0.0, 0.0)), vu) * ds
+        body_force = dot(g*rho, vu)*dx \
+            + dot(Constant((0.0, 0.0)), vu) * ds
         # diffusion = (-inner(mu * (grad(u_1) + grad(u_1).T), grad(vu))*dx
         #               + dot(mu * (grad(u_1) + grad(u_1).T)*n, vu)*ds)  # just fine
         # diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu))*dx)  # just fine
@@ -71,7 +71,7 @@ class ImplicitTentativeVelocityStep():
         diffusion = (-inner(mu * (grad(u) + grad(u).T), grad(vu)) * dx
                      + dot(mu * (grad(u) + grad(u).T) * n, vu) * ds)
         # convection = rho*dot(dot(u, nabla_grad(u_1)), vu) * dx  # no vortices
-        convection = rho*dot(dot(u_1, nabla_grad(u)), vu) * dx  # no vortices
+        convection = rho*dot(dot(u_1, nabla_grad(u)), vu) * dx
         # stabilization = -gamma*psi_p*p_1
         # convection = dot(div(rho * outer(u_1, u_1)), vu) * dx  # not stable!
         # convection = rho * dot(dot(u_1, nabla_grad(u_1)), vu) * dx  # just fine
@@ -109,8 +109,8 @@ class ExplicitTentativeVelocityStep():
         acceleration = rho * inner((u - u_1) / dt, vu) * dx
         diffusion = (-inner(mu * (grad(u_1) + grad(u_1).T), grad(vu)) * dx
                      + dot(mu * (grad(u_1) + grad(u_1).T) * n, vu) * ds)
-        body_force = dot(g*rho, vu)*dx
-            # + dot(Constant((0.0, 0.0)), vu) * ds
+        body_force = dot(g*rho, vu)*dx \
+            + dot(Constant((0.0, 0.0)), vu) * ds
         # diffusion = (mu*inner(grad(u_1), grad(vu))*dx
         #              - mu*dot(nabla_grad(u_1)*n, vu)*ds)  # int. by parts
         pressure = inner(p_1, div(vu)) * dx - dot(p_1 * n, vu) * ds  # int. by parts
@@ -174,7 +174,7 @@ class VelocityCorrectionStep():
         p_1, p_ = domain.p_1, domain.p_
 
         self.a = dot(u, vu) * dx
-        self.L = dot(u_, vu) * dx - dt / rho * dot(nabla_grad(p_ - p_1), vu) * dx
+        self.L = dot(u_, vu)*dx - dt/rho * dot(nabla_grad(p_ - p_1), vu)*dx
         self.A = assemble(self.a)
         [bc.apply(self.A) for bc in domain.bcu]
         self.domain = domain

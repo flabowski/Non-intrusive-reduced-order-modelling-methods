@@ -9,7 +9,10 @@ import numpy as np
 from scipy.interpolate import interp1d
 from tqdm import trange  # Progress bar
 import matplotlib.pyplot as plt
-from finite_element_solver.domains.cylinder import plot
+import os
+from dolfin import assemble, Expression
+import matplotlib as mpl
+# mpl.use('Agg')
 from finite_element_solver.domains.cavity import (create_cavity_mesh,
                                                   CavityProblemSetup)
 from finite_element_solver.schemes.chorins_projection import (
@@ -77,17 +80,20 @@ from finite_element_solver.schemes.convection_diffusion import (
 
 
 def Aluminum():
-    import matplotlib as mpl
-    mpl.use('Agg')
-    factor_rho = 1/2350.
+    # all the IO and printing happens here
+    # save every nth frame
+    T = 1000
+    n_save = 2
+    n_ts = 10000  # run n_ts timesteps
+    factor_rho = 1.
     factor_mu = 1000.
     k = 205  # W/(m K)
     cp = 0.91 * 1000  # kJ/(kg K) *1000 = J/(kg K)
     rho = 2350  # kg /m3
+    k_r = 0.001
     alpha = k/(cp*rho)
-    # all the IO and printing happens here
-    my_parameters = {"Diffusivity [-]": 0.0001,
-                     "viscosity solid [Pa*s]": 0.1,  # arbitrary.
+    my_parameters = {"Diffusivity [-]": alpha,  # Al.: 0.0001
+                     "viscosity solid [Pa*s]": 100.,  # arbitrary.
                      "characteristic length [m]": 1.0,
                      "ambient temperature [°C]": 600,
                      "initial temperature [°C]": 670,
@@ -95,10 +101,10 @@ def Aluminum():
                      "thermal conductivity top [W/(m K)]": 0.,
                      "thermal conductivity left [W/(m K)]": 0.,
                      "thermal conductivity bottom [W/(m K)]": 0.,
-                     "thermal conductivity right [W/(m K)]": 0.,
-                     "mean velocity lid [m/s]": 1.0,  # 0.00001
-                     "gravity [m/s²]": 9.81*0,
-                     "dt [s]": 0.01
+                     "thermal conductivity right [W/(m K)]": k_r,
+                     "mean velocity lid [m/s]": 0.0,  # 0.00001
+                     "gravity [m/s²]": 9.81,
+                     "dt [s]": .2
                      }
     create_cavity_mesh(lcar=0.02)
     my_domain = CavityProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
@@ -113,7 +119,7 @@ def Aluminum():
     rho_new = rho_Al(my_domain.get_t())
     my_domain.set_mu(mu_new*factor_mu)
     my_domain.set_rho(rho_new*factor_rho)
-    my_domain.stokes()
+    my_domain.initial_condition_from_file("u_.xdmf", "p_.xdmf")
     my_domain.u_1.assign(my_domain.u_)
     my_domain.p_1.assign(my_domain.p_)
 
@@ -127,33 +133,96 @@ def Aluminum():
     print("mu = ", mu)
     print("dt = ", my_domain.get_dt())
 
-    print(np.unique(my_domain.ds_(3).subdomain_data().array()))
-    my_domain.k_lft.assign(.0001)
-    my_domain.k_rgt.assign(.001)
-    my_domain.k_btm.assign(.001)
+    my_domain.k_lft.assign(.0)
+    my_domain.k_btm.assign(.0)
+    my_domain.k_top.assign(.0)
+    my_domain.k_rgt.assign(k_r)
+    n_nodes = my_domain.p_.compute_vertex_values(my_domain.mesh).size
+    velocity = np.zeros((n_ts//n_save, n_nodes*2))
+    pressure = np.zeros((n_ts//n_save, n_nodes))
+    time = np.zeros((n_ts//n_save,))
+    temperature = np.zeros((n_ts//n_save, n_nodes))
+    tri = my_domain.mesh.cells()
+    x, y = np.split(my_domain.mesh.coordinates(), 2, 1)
+    u, v = np.split(velocity, 2, 0)
+    x, y, u, v = x.ravel(), y.ravel(), u.ravel(), v.ravel()
 
-    my_domain.k_top.assign(.001)
+    ds_r = my_domain.ds_(my_domain.bc_dict["right"])
+    A = assemble(Expression("1", degree=1) * ds_r)
+    # [600,   400,   425,  450,   475,  500,   525,  550,   575,  600,   625,  650]
+    # [0.07, 0.27, 0.245, 0.22, 0.195, 0.17, 0.145, 0.12, 0.095, 0.07, 0.045, 0.02]
+    for dt in [10, 25, 50, 75, 100, 150, 200, 250, 300]:
+        my_dir = "../doc/cavity_solidification_dt({:.0f})/".format(dt)
+        print("snapshots will be saved at: "+my_dir)
+        if not os.path.exists(my_dir):
+            os.makedirs(my_dir)
+        fig, ax = my_domain.plot()
+        plt.savefig(my_dir+"tst0_init.png", dpi=150)
+        plt.close()
+        for n in trange(n_ts):
+            # get mean temperature on the right wall (inside):
+            # integrate temperature at the right wall and divide by the area
+            t_r = assemble(my_domain.t_*ds_r) / A
+            t_amb = t_r -dt
+            my_domain.t_amb.assign(t_amb)
 
-    for n in trange(100000):
-        tvs.solve(reassemble_A=True)
-        ps.solve()
-        vcs.solve()
-        cd.solve()
+            tvs.solve(reassemble_A=True)
+            ps.solve()
+            vcs.solve()
+            cd.solve()
 
-        my_domain.u_1.assign(my_domain.u_)
-        my_domain.p_1.assign(my_domain.p_)
-        my_domain.t_1.assign(my_domain.t_)
+            my_domain.u_1.assign(my_domain.u_)
+            my_domain.p_1.assign(my_domain.p_)
+            my_domain.t_1.assign(my_domain.t_)
+            mu_new = mu_Al(my_domain.get_t(),
+                           my_parameters["viscosity solid [Pa*s]"])
+            rho_new = rho_Al(my_domain.get_t())
+            my_domain.set_mu(mu_new*factor_mu)
+            my_domain.set_rho(rho_new*factor_rho)
+            # print(np.min(my_domain.get_t()), np.max(my_domain.get_t()))
+            # print(np.min(my_domain.get_rho()), np.max(my_domain.get_rho()))
+            if ((n % 100) == 0) or (n < 10):
+                fig, ax = my_domain.plot()
+                plt.savefig(my_dir+"tst{:.0f}.png".format(n), dpi=200)
+                plt.close()
+
+            if (n % n_save) == 0:
+                i = n // n_save
+                mesh = my_domain.mesh
+                velocity[i] = my_domain.u_.compute_vertex_values(mesh)
+                pressure[i] = my_domain.p_.compute_vertex_values(mesh)
+                temperature[i] = my_domain.t_.compute_vertex_values(mesh)
+                time[i] = n*my_domain.get_dt()
+            # if n == 2000:
+            #     f_out = df.XDMFFile("u_.xdmf")
+            #     # timestep 0, Not appending to file
+            #     f_out.write_checkpoint(my_domain.u_, "f", 0,
+            #                            df.XDMFFile.Encoding.HDF5, False)
+            #     f_out.close()
+            #     f_out = df.XDMFFile("p_.xdmf")
+            #     f_out.write_checkpoint(my_domain.p_, "f", 0,
+            #                            df.XDMFFile.Encoding.HDF5, False)
+            #     f_out.close()Tamb({:.0f})/".format(t_amb)
+        pf = "Tamb{:.0f}_".format(t_amb)  # prefix
+        np.save(my_dir+pf+"time.npy", time)
+        np.save(my_dir+pf+"x.npy", x.ravel())
+        np.save(my_dir+pf+"y.npy", y.ravel())
+        np.save(my_dir+pf+"tri.npy", tri)
+        np.save(my_dir+pf+"velocity.npy", velocity)
+        np.save(my_dir+pf+"pressure.npy", pressure)
+        np.save(my_dir+pf+"temperature.npy", temperature)
+
+        t_init = my_parameters["initial temperature [°C]"]
+        my_domain.t_.vector().vec().array[:] = t_init
+        my_domain.t_1.vector().vec().array[:] = t_init
         mu_new = mu_Al(my_domain.get_t(),
                        my_parameters["viscosity solid [Pa*s]"])
         rho_new = rho_Al(my_domain.get_t())
         my_domain.set_mu(mu_new*factor_mu)
         my_domain.set_rho(rho_new*factor_rho)
-        # print(np.min(my_domain.get_t()), np.max(my_domain.get_t()))
-        # print(np.min(my_domain.get_rho()), np.max(my_domain.get_rho()))
-        if (n % 100) == 0:
-            fig, ax = my_domain.plot()
-            plt.savefig("tst{:.0f}.png".format(n))
-            plt.close()
+        my_domain.initial_condition_from_file("u_.xdmf", "p_.xdmf")
+        my_domain.u_1.assign(my_domain.u_)
+        my_domain.p_1.assign(my_domain.p_)
 
 
 def rho_Al(T):

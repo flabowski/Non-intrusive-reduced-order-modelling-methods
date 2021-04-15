@@ -24,6 +24,9 @@ def test():
                      }
     create_channel_mesh(lcar=0.02)
     my_domain = ChannelProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
+    plot(my_domain.mesh)
+    my_domain.plot()
+    asd
 
     # my_mesh = CylinderMesh(lcar=0.02)
     # my_domain = CylinderDomain(my_parameters, my_mesh.mesh)
