@@ -226,4 +226,3 @@ if __name__ == "__main__":
 
     # create_channel_mesh(lcar=0.02)
     # my_domain = ChannelProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
-
