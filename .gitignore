@@ -133,6 +133,9 @@ dmypy.json
 *.pdf
 
 # Meshfiles
-.vtk
-.xdmf
-.xml
+*.vtk
+*.xdmf
+*.xml
+*.h5
+
+core.*
