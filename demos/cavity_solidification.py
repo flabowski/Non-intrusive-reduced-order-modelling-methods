@@ -13,6 +13,8 @@ import os
 from dolfin import assemble, Expression
 import matplotlib as mpl
 # mpl.use('Agg')
+import sys, os
+sys.path.append('/home/fenics/shared/')
 from finite_element_solver.domains.cavity import (create_cavity_mesh,
                                                   CavityProblemSetup)
 from finite_element_solver.schemes.chorins_projection import (
@@ -79,35 +81,9 @@ from finite_element_solver.schemes.convection_diffusion import (
 #             plt.close()
 
 
-def Aluminum():
-    # all the IO and printing happens here
-    # save every nth frame
-    T = 1000
-    n_save = 2
-    n_ts = 10000  # run n_ts timesteps
-    factor_rho = 1.
-    factor_mu = 1000.
-    k = 205  # W/(m K)
-    cp = 0.91 * 1000  # kJ/(kg K) *1000 = J/(kg K)
-    rho = 2350  # kg /m3
-    k_r = 0.001
-    alpha = k/(cp*rho)
-    my_parameters = {"Diffusivity [-]": alpha,  # Al.: 0.0001
-                     "viscosity solid [Pa*s]": 100.,  # arbitrary.
-                     "characteristic length [m]": 1.0,
-                     "ambient temperature [°C]": 600,
-                     "initial temperature [°C]": 670,
-                     "temperature feeder [°C]": 670,
-                     "thermal conductivity top [W/(m K)]": 0.,
-                     "thermal conductivity left [W/(m K)]": 0.,
-                     "thermal conductivity bottom [W/(m K)]": 0.,
-                     "thermal conductivity right [W/(m K)]": k_r,
-                     "mean velocity lid [m/s]": 0.0,  # 0.00001
-                     "gravity [m/s²]": 9.81,
-                     "dt [s]": .2
-                     }
+def Aluminum(parameters):
     create_cavity_mesh(lcar=0.02)
-    my_domain = CavityProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
+    my_domain = CavityProblemSetup(parameters, "mesh.xdmf", "mf.xdmf")
 
     tvs = ImplicitTentativeVelocityStep(my_domain)
     # tvs = ExplicitTentativeVelocityStep(my_domain)
@@ -115,7 +91,7 @@ def Aluminum():
     vcs = VelocityCorrectionStep(my_domain)
     cd = ConvectionDiffusion(my_domain, k=0.5)
 
-    mu_new = mu_Al(my_domain.get_t(), my_parameters["viscosity solid [Pa*s]"])
+    mu_new = mu_Al(my_domain.get_t(), parameters["viscosity solid [Pa*s]"])
     rho_new = rho_Al(my_domain.get_t())
     my_domain.set_mu(mu_new*factor_mu)
     my_domain.set_rho(rho_new*factor_rho)
@@ -124,8 +100,8 @@ def Aluminum():
     my_domain.p_1.assign(my_domain.p_)
 
     rho = np.mean(my_domain.get_rho())
-    U = my_parameters["mean velocity lid [m/s]"]
-    L = my_parameters["characteristic length [m]"]
+    U = parameters["mean velocity lid [m/s]"]
+    L = parameters["characteristic length [m]"]
     mu = np.mean(my_domain.get_mu())
     Re = rho*U*L/mu
     print("Re = ", Re)
@@ -151,8 +127,12 @@ def Aluminum():
     A = assemble(Expression("1", degree=1) * ds_r)
     # [600,   400,   425,  450,   475,  500,   525,  550,   575,  600,   625,  650]
     # [0.07, 0.27, 0.245, 0.22, 0.195, 0.17, 0.145, 0.12, 0.095, 0.07, 0.045, 0.02]
-    for dt in [10, 25, 50, 75, 100, 150, 200, 250, 300]:
+    # for dt in [10, 25, 50, 75, 100, 150, 200, 250, 300]:
+    if True:
+        dt = 0
         my_dir = "../doc/cavity_solidification_dt({:.0f})/".format(dt)
+        my_dir = "../doc/cavity_solidification_dt_LIN/"
+        
         print("snapshots will be saved at: "+my_dir)
         if not os.path.exists(my_dir):
             os.makedirs(my_dir)
@@ -160,6 +140,8 @@ def Aluminum():
         plt.savefig(my_dir+"tst0_init.png", dpi=150)
         plt.close()
         for n in trange(n_ts):
+            _time_ = n*my_domain.get_dt()
+            dt = _time_/2000*250+50
             # get mean temperature on the right wall (inside):
             # integrate temperature at the right wall and divide by the area
             t_r = assemble(my_domain.t_*ds_r) / A
@@ -203,6 +185,7 @@ def Aluminum():
             #     f_out.write_checkpoint(my_domain.p_, "f", 0,
             #                            df.XDMFFile.Encoding.HDF5, False)
             #     f_out.close()Tamb({:.0f})/".format(t_amb)
+            # asd
         pf = "Tamb{:.0f}_".format(t_amb)  # prefix
         np.save(my_dir+pf+"time.npy", time)
         np.save(my_dir+pf+"x.npy", x.ravel())
@@ -292,6 +275,40 @@ def mu_Al(T, mu_solid):
     # mu_arr[:] = mu_solid
     return mu_arr
 
+class mock_args():
+    def __init__(self):
+        self.d_velocity = 2
+        self.d_pressure = 1
+
 
 if __name__ == "__main__":
-    Aluminum()
+    # all the IO and printing happens here
+    # save every nth frame
+    T = 1000
+    n_save = 2
+    n_ts = 10000  # run n_ts timesteps
+    factor_rho = 1.
+    factor_mu = 1000.
+    k = 205  # W/(m K)
+    cp = 0.91 * 1000  # kJ/(kg K) *1000 = J/(kg K)
+    rho = 2350  # kg /m3
+    k_r = 0.001
+    alpha = k/(cp*rho)
+
+    my_parameters = {"Diffusivity [-]": alpha,  # Al.: 0.0001
+                     "viscosity solid [Pa*s]": 100.,  # arbitrary.
+                     "characteristic length [m]": 1.0,
+                     "ambient temperature [°C]": 600,
+                     "initial temperature [°C]": 670,
+                     "temperature feeder [°C]": 670,
+                     "thermal conductivity top [W/(m K)]": 0.,
+                     "thermal conductivity left [W/(m K)]": 0.,
+                     "thermal conductivity bottom [W/(m K)]": 0.,
+                     "thermal conductivity right [W/(m K)]": k_r,
+                     "mean velocity lid [m/s]": 0.0,  # 0.00001
+                     "gravity [m/s²]": 9.81,
+                     "dt [s]": .2
+                     }
+    # asd
+    # print(args)
+    Aluminum(my_parameters)
