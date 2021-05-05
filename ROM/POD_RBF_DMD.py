@@ -1,8 +1,14 @@
+#!/usr/bin/python3.6
+# -*- coding: utf-8 -*-
+"""
+Created on Mon May  3 13:30:48 2021
 
+@author: florianma
+"""
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-import os
+import sys, os
 from os.path import isfile, join
 import pickle
 import tensorflow as tf
@@ -15,94 +21,48 @@ from scipy.interpolate import griddata
 # from mayavi import mlab
 np.set_printoptions(suppress=True)
 plot_width = 16
-
-
-def total_energy(time, dT):
-    k, A = 0.001, 1.0
-    dt = np.diff(time, prepend=0)
-    return np.cumsum(k*A*dT*dt)
-
-def get_snapshot_matrix():
-    path = "/home/fenics/shared/doc/"
-    fileX = "cavity_solidification_dT_X.npy"
-    fileP = "cavity_solidification_dT_P.npy"
-    try:
-        X = np.load(path+fileX)
-        P = np.load(path+fileP)
-    except:
-        print("load snapshot matrix ...")
-        s1, s2 = 4, 3015
-        d1, d2 = 100, 10
-        D = 3
-        X = np.zeros((s1, s2, d1, d2))  # 4, 3015, 100, 10
-        P = np.zeros((d1, d2, D))  # 100, 10, 3
-        dTs = [10, 25, 50, 70, 75, 100, 150, 200, 250, 300]
-        for i, dT in enumerate(dTs):
-            mypath = path+"cavity_solidification_dt({:.0f})/".format(dT)
-            onlyfiles = [f for f in os.listdir(mypath) if f.endswith(".npy")]
-            time = np.load(mypath+onlyfiles[0])[::50]  # 100, 6030
-            uv = np.load(mypath+onlyfiles[4])[::50]  # 100, 6030
-            p = np.load(mypath+onlyfiles[5])[::50]  # 100, 3015
-            t = np.load(mypath+onlyfiles[6])[::50]  # 100, 3015
-            uv.shape = (100, 3015, 2)
-            X[0, :, :, i] = uv[:, :, 0].T
-            X[1, :, :, i] = uv[:, :, 1].T
-            X[2, :, :, i] = p.T
-            X[3, :, :, i] = t.T
-            P[:, i, 0] = time
-            P[:, i, 1] = dT
-            P[:, i, 2] = total_energy(time, dT)
-        np.save(path+fileX, X)
-        np.save(path+fileP, P)
-    return X, P
-
-
-
-
-def normalise(X, axis=0):
-    # return X, 0.0, 1.0
-    X_min = X.min(axis=axis, keepdims=True)
-    X_max = X.max(axis=axis, keepdims=True)
-    X_range = X_max - X_min
-    X_range[X_range < 1e-6] = 1e-6
-    X_n = (X-X_min)/X_range
-    return X_n, X_min, X_range
+sys.path.append('/home/fenics/shared/')
+from ROM.snapshot_manager import get_snapshot_matrix, Data
+from ROM.plotting import plot_snapshot_cav
 
 
 class ROM():
-    def __init__(self, X, points):
-        (s1, s2, d1, d2) = X.shape
-        (d1_, d2_, D) = points.shape
-        print(s1, s2, d1, d2)
-        print(d1_, d2_, D)
+    def __init__(self, data):
+        # (s1, s2, d1, d2) = X.shape
+        # (d1_, d2_, D) = points.shape
+        # print(s1, s2, d1, d2)
+        # print(d1_, d2_, D)
 
-        self.n_state_variables = s1
-        self.n_nodes = s2
-        self.n_time_instances = d1
-        self.n_parameter_values = d2
-        self.n_parameters = D
-        self.N, self.M = s1*s2, d1*d2
-        self.reduced_rank = self.M
-        print(X.shape, P.shape)
-        print(self.N, self.M)
-        print(X.shape)
+        # self.n_state_variables = s1
+        # self.n_nodes = s2
+        # self.n_time_instances = d1
+        # self.n_parameter_values = d2
+        # self.n_parameters = D
+        # self.N, self.M = s1*s2, d1*d2
+        self.reduced_rank = data.M
+        # print(X.shape, P.shape)
+        # print(self.N, self.M)
+        # print(X.shape)
 
-        X.shape = (self.N, self.M)
-        points.shape = (self.M, D)
-        self.X, self.points = X, points
-        self.X_n, self.X_min, self.X_range = normalise(X, axis=1)
-        self.points_n, self.points_min, self.points_range = normalise(points, axis=0)
-        S, U, V = tf.linalg.svd(self.X_n, full_matrices=False)  # (N, R), (R, R), (M, M)
+        # X.shape = (self.N, self.M)
+        # points.shape = (self.M, D)
+        # self.X, self.points = X, points
+        # self.X_n, self.X_min, self.X_range = normalise(X, axis=1)
+        # self.points_n, self.points_min, self.points_range = normalise(points, axis=0)
+        self.data = data
+        S, U, V = tf.linalg.svd(data.X_train_n, full_matrices=False)  # (N, R), (R, R), (M, M)
 
         path = "/home/fenics/shared/doc/"
-        np.save(path+"points.npy", self.points_n.reshape(d1, d2, D))
+        np.save(path+"P_train_n.npy", data.P_train_n)
+        np.save(path+"P_val_n.npy", data.P_val_n)
         np.save(path+"values.npy", V)
+
         self.S = S.numpy()
         self.U = U.numpy()
         self.V = V.numpy()
         return
 
-    def interpolateV(self, xi):
+    def interpolateV(self, xi, method):
         """
         Parameters
         ----------
@@ -123,12 +83,19 @@ class ROM():
         # d1, D = xi.shape  # snapshots_per_dataset
         # d2 = m // d1  # n_trainingsets
         # assert m == d1*d2, "?"
+        data = self.data
 
-        V_interpolated = np.zeros((self.n_time_instances, self.reduced_rank))
+        V_interpolated = np.zeros((data.n_time_instances, self.reduced_rank))
+        print("interpolating... ")
         for i in range(self.reduced_rank):
-            # points.shape (400, 2) | vals.shape (400, ) | xi.shape (50, 2)
+            print(i, end=", ")
             vals = self.V[:, i].copy()
-            V_interpolated[:, i] = griddata(self.points_n, vals, xi, method='linear').copy()
+            if method == "rbf":
+                x, y, z, d = data.P_train_n[:, 0], data.P_train_n[:, 1], data.P_train_n[:, 2], vals
+                rbfi = Rbf(x, y, z, d, function="linear")  # radial basis function interpolator instance
+                V_interpolated[:, i] = rbfi(xi[:, 0], xi[:, 1], xi[:, 2])
+            else:
+                V_interpolated[:, i] = griddata(data.P_train_n, vals, xi, method=method).copy()
         self.V_interpolated = V_interpolated
         return V_interpolated
 
@@ -138,7 +105,7 @@ class ROM():
         S_hat = self.S[:r]  # (r, r) / (r,) wo  non zero elements
         V_hat = V_[:, :r]  # (d1, r)
         X_approx_n = np.dot(U_hat*S_hat, V_hat.T)  # n, d1
-        X_approx = X_approx_n*self.X_range + self.X_min
+        X_approx = self.data.rescaleX(X_approx_n)  # n, d1
         return X_approx, X_approx_n
 
 
@@ -160,65 +127,94 @@ def create_ROM(X):
 if __name__ == "__main__":
     print("main")
     X_all, P_all = get_snapshot_matrix()
+    my_data = Data(X_all, P_all, 4)
+    my_data.test()
 
-    # test 1
-    train = np.array([0,1,2,3,4,6,7,8,9])
-    val = np.array([5])
-    X = X_all[... ,train].copy()
-    P = P_all[:, train, :].copy()
-    X_val = X_all[..., val].copy()
-    P_val = P_all[:, val, :].copy()
+    path = "/home/fenics/shared/doc/cavity_solidification_dt(0)/"
+    x, y, tri = np.load(path+"TambLIN_x.npy"), np.load(path+"TambLIN_y.npy"), np.load(path+"TambLIN_tri.npy")
 
-    print(X.shape, P.shape)
-    my_ROM = ROM(X, P)
-    P_val_n = normalise_P  # P_val-points_min)/points_range
-    V_i = my_ROM.interpolateV(P_val_n)
-    X_pred, X_pred_n = my_ROM.predict(V_i)
-    print(X_pred)
-    print(X_val)
-    asd
-    print("S")
+    my_ROM = ROM(my_data)
+    my_ROM.reduced_rank = 100
 
-    n_state_variables = 4
-    n_nodes = 3015
-    n_time_instances = 100
-    n_parameter_values = 9
-    n_parameters = 3
+    V_linear = my_ROM.interpolateV(my_data.P_val_n, method="linear")
+    X_pred_lin, X_pred_lin_n = my_ROM.predict(V_linear)
+    V_rbf = my_ROM.interpolateV(my_data.P_val_n, method="rbf")
+    X_pred_rbf, X_pred_rbf_n = my_ROM.predict(V_rbf)
+    i = 50
+    plot_snapshot_cav(X_pred_lin[:, i], x, y, tri)
+    plt.savefig("./X_pred_lin.png")
+    plot_snapshot_cav(X_pred_rbf[:, i], x, y, tri)
+    plt.savefig("./X_pred_rbf.png")
+    plot_snapshot_cav(my_data.X_val[:, i], x, y, tri)
+    plt.savefig("./X_val.png")
+    for i in range(len(my_data.X_val[0, :])):
+        err_lin = np.sum((my_data.X_val[:, i] - X_pred_lin[:, i])**2)**.5
+        err_rbf = np.sum((my_data.X_val[:, i] - X_pred_rbf[:, i])**2)**.5
+        print(i, err_lin, err_rbf)
 
-    N, M = n_state_variables*n_nodes, n_time_instances*n_parameter_values
-    reduced_rank = M
 
-    path = "/home/fenics/shared/doc/"
-    points = np.load(path+"points.npy")
-    V = np.load(path+"values.npy")
-    print(points.shape)
-    print(V.shape)
-    points.shape = n_time_instances*n_parameter_values, n_parameters
-    points_n, points_min, points_range = normalise(points, axis=0)
-    l = points_n[1] == 0.4827586206896552
-    print(points)
-    points.shape = n_time_instances, n_parameter_values, n_parameters
+    t = my_data.P_val_n[:, 0]
+
+    fig, (ax) = plt.subplots()
+    for i in range(2):
+        ax.plot(t, V_linear[:, 0], "g-")
+        ax.plot(t, V_linear[:, 1], "g-")
+        ax.plot(t, V_linear[:, 2], "g-")
+        # ax.plot(t, V_linear[:, 3], "g-")
+        # ax.plot(t, V_linear[:, 4], "g-")
+        ax.plot(t, V_rbf[:, 0], "r-")
+        ax.plot(t, V_rbf[:, 1], "r-")
+        ax.plot(t, V_rbf[:, 2], "r-")
+        # ax.plot(t, V_rbf[:, 3], "r-")
+        # ax.plot(t, V_rbf[:, 4], "r-")
+    plt.savefig("./V.png")
     
-    fig, (ax1, ax2) = plt.subplots(2, 1)
-    for i in range(n_parameter_values):
-        t = points[:, i, 0]
-        dT = points[:, i, 1]
-        q = points[:, i, 2]
-        ax1.plot(t, dT)
-        ax2.plot(t, q)
-    dT = t/2000*250+50
-    q = total_energy(t, dT)
-    ax1.plot(t, dT, "r--")
-    ax2.plot(t, q, "r--")
-    ax1.set_title("wall temperature difference")
-    ax2.set_title("total heat change")
-    plt.savefig("./tst.png")
-    xi = np.concatenate((t[:, None], dT[:, None], q[:, None]), axis=1)
-    xi_n = (xi-points_min)/points_range
+    # # plot pred + val
+    # print(X_pred)
+    # print(X_val)
+    # asd
+    # print("S")
 
-    V_interpolated = np.zeros((len(xi), reduced_rank))
-    for i in range(reduced_rank):
-        # points.shape (400, 2) | vals.shape (400, ) | xi.shape (50, 2)
-        # vals = V[:, i].numpy().copy()
-        vals = V[:, i].copy()
-        V_interpolated[:, i] = griddata(points_n, vals, xi_n, method='linear').copy()
+    # n_state_variables = 4
+    # n_nodes = 3015
+    # n_time_instances = 100
+    # n_parameter_values = 9
+    # n_parameters = 3
+
+    # N, M = n_state_variables*n_nodes, n_time_instances*n_parameter_values
+    # reduced_rank = M
+
+    # path = "/home/fenics/shared/doc/"
+    # points = np.load(path+"points.npy")
+    # V = np.load(path+"values.npy")
+    # print(points.shape)
+    # print(V.shape)
+    # points.shape = n_time_instances*n_parameter_values, n_parameters
+    # points_n, points_min, points_range = normalise(points, axis=0)
+    # l = points_n[1] == 0.4827586206896552
+    # print(points)
+    # points.shape = n_time_instances, n_parameter_values, n_parameters
+    
+    # fig, (ax1, ax2) = plt.subplots(2, 1)
+    # for i in range(n_parameter_values):
+    #     t = points[:, i, 0]
+    #     dT = points[:, i, 1]
+    #     q = points[:, i, 2]
+    #     ax1.plot(t, dT)
+    #     ax2.plot(t, q)
+    # dT = t/2000*250+50
+    # q = total_energy(t, dT)
+    # ax1.plot(t, dT, "r--")
+    # ax2.plot(t, q, "r--")
+    # ax1.set_title("wall temperature difference")
+    # ax2.set_title("total heat change")
+    # plt.savefig("./tst.png")
+    # xi = np.concatenate((t[:, None], dT[:, None], q[:, None]), axis=1)
+    # xi_n = (xi-points_min)/points_range
+
+    # V_interpolated = np.zeros((len(xi), reduced_rank))
+    # for i in range(reduced_rank):
+    #     # points.shape (400, 2) | vals.shape (400, ) | xi.shape (50, 2)
+    #     # vals = V[:, i].numpy().copy()
+    #     vals = V[:, i].copy()
+    #     V_interpolated[:, i] = griddata(points_n, vals, xi_n, method='linear').copy()
