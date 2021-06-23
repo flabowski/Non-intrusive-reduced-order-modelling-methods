@@ -159,7 +159,7 @@ class ChannelProblemSetup():
         self.rho = df.Constant(parameters["density [kg/m3]"])
         self.mu = df.Constant(parameters["viscosity [Pa*s]"])
         self.dt = df.Constant(parameters["dt [s]"])
-        self.g = 0.0
+        self.g = df.Constant((0, 0))
         self.vu, self.vp = df.TestFunction(V), df.TestFunction(Q)
         self.u_, self.p_ = df.Function(V), df.Function(Q)
         self.u_1, self.p_1 = df.Function(V), df.Function(Q)
@@ -207,4 +207,22 @@ class ChannelProblemSetup():
 
 
 if __name__ == "__main__":
+    my_parameters = {"density [kg/m3]": 1.0,
+                     "viscosity [Pa*s]": 1e-3,
+                     "characteristic length [m]": .1,
+                     "velocity [m/s]": 1.5,
+                     "dt [s]": 0.1
+                     }
     create_channel_mesh(lcar=0.02)
+    my_domain = ChannelProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
+    plot(my_domain.mesh)
+    bc_dict = {"obstacle": 2,
+               "channel_walls": 1,
+               "inlet": 3,
+               "outlet": 4}
+    print(bc_dict)
+    ds_r = my_domain.ds_(bc_dict["channel_walls"])
+    Area = df.assemble(df.Expression("1", degree=1) * ds_r)
+
+    # create_channel_mesh(lcar=0.02)
+    # my_domain = ChannelProblemSetup(my_parameters, "mesh.xdmf", "mf.xdmf")
