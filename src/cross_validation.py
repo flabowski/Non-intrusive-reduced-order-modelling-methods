@@ -95,7 +95,8 @@ def plot_snapshot_cav(snapshot, x, y, tri, umin=None, umax=None, tmin=None, tmax
     tmax = t.max() if (not tmax) else tmax
     magnitude = (u**2 + v**2)**.5
     cmap = mpl.cm.inferno
-    t[t>tmax] = tmax
+    t[t >= (tmax-1e-6)] = (tmax-1e-6)
+    print(t.max())
 
     fig, (ax1, ax2) = plt.subplots(1, 2, sharex=True, sharey=True,
                                    figsize=(plot_width/2.54, 8/2.54))
@@ -245,16 +246,18 @@ def plot_mode_amplitude(S, V, xi):
     axs[0].plot(np.arange(n), S[:n], ".")
     cum_en = np.cumsum(S)[:n]/np.sum(S)*100
     axs[1].plot(np.arange(n), cum_en, ".")
+    axs[0].set_yscale('log')
     # axs[0].legend()
     # axs[1].legend()
     axs[0].set_title("First n singular values S")
     axs[1].set_title("Cumulative energy [%]")
     axs[0].set_xlim(0, n)
-    axs[0].set_ylim(0, S[1])
+    axs[0].set_ylim(1, 1000)
+    # axs[0].set_ylim(0, S[1])
+    # axs[0].set_ylim(bottom=0)
     axs[1].set_xlabel("Snapshot number")
     axs[0].set_ylabel("Singular value")
     axs[1].set_ylabel("Energy in %")
-    axs[0].set_ylim(bottom=0)
     axs[1].set_ylim([0, 100])
     plt.tight_layout()
     plt.show()
@@ -474,14 +477,36 @@ def initialROM(X_all, _xi_all_, dims_all):
     return
 
 
+def ROM_accuracy_animation(X_all, _xi_all_, dims_all):
+    X, xi = select_random_snapsots(X_all, _xi_all_, dims_all, 75)
+    X_n, X_min, X_range = normalise(X)
+    S_full, U_full, V_full = tf.linalg.svd(X_n, full_matrices=False)
+    for r in range(1, 50):
+        t = 19
+        nset = 8
+        j = t*dims_all[1][1] + nset
+        X_rom_n = ROM(S_full, U_full, V_full.numpy(), r)
+        X_rom = X_rom_n*X_range + X_min
+        X_diff = np.abs(X_rom_n - X_n)
+        rmse = X_diff.mean()
+        # fig, ax = plot_snapshot(X_rom[:, j], x, y, tri, tmin=600, tmax=670.0)
+        fig, ax = plot_snapshot(X_rom[:, j], x, y, tri, pmin=np.min(X),
+                                pmax=np.max(X))
+        plt.suptitle("ROM: rank: {:2.0f}, error: {:2.1f}%".format(r, rmse*100))
+        path = "C:/Users/florianma/Documents/data/freezing_cavity/"
+        plt.savefig(path+"gifs/frames/frame_{:06.0f}.png".format(r))
+        plt.close()
+    return
+
+
 if __name__ == "__main__":
     plt.close("all")
-    # load_snapshots = load_snapshots_cylinder
-    # path = "C:/Users/florianma/Documents/data/flow_around_cylinder/"
-    # plot_snapshot = plot_snapshot_cyl
-    load_snapshots = load_snapshots_cavity
-    path = "C:/Users/florianma/Documents/data/freezing_cavity/"
-    plot_snapshot = plot_snapshot_cav
+    load_snapshots = load_snapshots_cylinder
+    path = "C:/Users/florianma/Documents/data/flow_around_cylinder/"
+    plot_snapshot = plot_snapshot_cyl
+    # load_snapshots = load_snapshots_cavity
+    # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
+    # plot_snapshot = plot_snapshot_cav
     # to allow for a trigonometric interpolation, the oscillations are repeated
     # along the time axis
     # n: number of nodes (s1) * number of physical quantities (s2)
@@ -493,6 +518,9 @@ if __name__ == "__main__":
     # xi: (m, D) = (d1*d2, D)
 
     X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots(path)
+
+    asd
+    # ROM_accuracy(X_all, _xi_all_, dims_all)
 
     print(dims_all)
     [[s1, s2], [d1_all, d2]] = dims_all
@@ -509,7 +537,7 @@ if __name__ == "__main__":
     mse = np.zeros((len(n_ss), d2))
     x_bp = np.zeros((len(n_ss), d2), dtype=np.int32)
     # set_nr = np.zeros((len(n_ss), d2), dtype=np.int32)
-    # asd
+    asd
     for ns, d1_new in enumerate(n_ss):
         print(ns, d1_new)
         # ns = 3
