@@ -11,6 +11,15 @@ import matplotlib.pyplot as plt
 plot_width = 16
 import timeit
 
+# def comp_time(x):
+#     x1 = 2.5866*x**2 + 1.8577*x - 0.2027
+#     x2 = 4*(2.5866*(x/2)**2 + 1.8577*(x/2) - 0.2027)
+#     return 2.5866*x**2 + 1.8577*x - 0.2027
+# x = np.linspace(0, 5, 100)
+# plt.plot(x, 2.5866*x**2 + 1.8577*x)
+# plt.plot(x, 4*(2.5866*(x/2)**2 + 1.8577*(x/2)))
+
+
 def timed_dot(a, b):
     tic = timeit.default_timer()
     c = np.dot(a, b)
@@ -26,6 +35,31 @@ def timed_qr(U0):
     print("qr decomposition of U0 \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(U0.shape[0], U0.shape[1], toc-tic))
     return q, r
 
+
+def svdnp(X, full_matrices):
+    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
+    return U, S, Vh.T
+
+def timed_svdnp(X, full_matrices):
+    tic = timeit.default_timer()
+    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
+    toc = timeit.default_timer()
+    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
+    return U, S, Vh.T
+
+def timed_svdnp_truncated(X, full_matrices):
+    tic = timeit.default_timer()
+    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
+    toc = timeit.default_timer()
+    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
+    return truncate_basis(U, S, Vh.T, .999)
+
+
+def svd(X, full_matrices):
+    S, U, V = tf.linalg.svd(X, full_matrices=full_matrices)
+    S, U, V = S.numpy(), U.numpy(), V.numpy()
+    return U, S, V
+
 def timed_svd(X, full_matrices):
     tic = timeit.default_timer()
     S, U, V = tf.linalg.svd(X, full_matrices=full_matrices)
@@ -34,10 +68,26 @@ def timed_svd(X, full_matrices):
     print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
     return U, S, V
 
-svd = timed_svd
-dot = timed_dot
-qr = timed_qr
+def timed_svd_truncated(X, full_matrices):
+    tic = timeit.default_timer()
+    S, U, V = tf.linalg.svd(X, full_matrices=full_matrices)
+    S, U, V = S.numpy(), U.numpy(), V.numpy()
+    toc = timeit.default_timer()
+    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
+    return truncate_basis(U, S, V, .999)
 
+
+
+
+qr = np.linalg.qr
+dot = np.dot
+
+# svd = timed_svd
+# dot = timed_dot
+# qr = timed_qr
+
+# svd = timed_svdnp_truncated
+# svd = timed_svd_truncated
 
 def plotS(S, eps):
     cum_en = np.cumsum(S)/np.sum(S)
@@ -67,18 +117,21 @@ def plotS(S, eps):
     plt.show()
     return
 
-def truncate_basis(S, U, V, eps):
+def truncate_basis(U, S, V, eps):
     """
     reduce rank of basis to low rank r
     """
-    cum_en = np.cumsum(S)/np.sum(S)
-    r = np.sum(cum_en<eps)
+    if np.sum(S) == 0:
+        r = 1
+    else:
+        cum_en = np.cumsum(S)/np.sum(S)
+        r = np.sum(cum_en<eps)
     U_hat = U[:, :r]  # (n, r)
     S_hat = S[:r]  # (r, r) / (r,) wo  non zero elements
     V_hat = V[:, :r]  # (d1, r)
     # plotS(S, eps)
     print(len(S), "->", r)
-    return S_hat, U_hat, V_hat
+    return U_hat, S_hat, V_hat
 
 
 def extend_svd(U, S, V, X, X_additional):
@@ -95,10 +148,8 @@ def hierarchical_svd(X, d, c, eps):
         s, e = j*Nd, Nd*(j+1)
         if e>m: e=m
         # print("slice", j)
-        Uc, Sc = blockwise_svd(X[s:e, :], c, eps)
-
-
-        SV = dot(Uc.T, X[s:e])
+        Uc, Sc = row_svd(X[s:e, :], c, eps)
+        SV = dot(Uc.T, X[s:e, :])
         U, S, V = svd(SV, full_matrices=False)
         print(np.allclose(Sc, S))
         # TODO: check if thats the same as tf.linalg.svd(X[s:e, :], full_matrices=False)
@@ -107,11 +158,9 @@ def hierarchical_svd(X, d, c, eps):
     # U, S = merge_blocks(l_V, l_S)  # does not make sense
     return U, S, V
 
-
-
-def blockwise_svd(X, c, eps):
+def row_svd(X, c, eps, ommit_V):
     m, n = X.shape
-    l_U, l_S = [None for i in range(c)], [None for i in range(c)]
+    l_U, l_S, l_V = [None for i in range(c)], [None for i in range(c)], [None for i in range(c)]
     Nc = np.ceil(n/c).astype(np.int32)
     for j in range(c):
         print("block", j)
@@ -119,43 +168,77 @@ def blockwise_svd(X, c, eps):
         if e>n: e=n
         # print(j, s, e, X[:, s:e].shape)
         U, S, V = svd(X[:, s:e], full_matrices=False)
-        l_S[j], l_U[j], V = truncate_basis(S, U, V, eps)
+        l_U[j], l_S[j], l_V[j] = U, S, V
         # plotS(S, .999)
         # TODO: truncate!
-    return merge_blocks(l_U, l_S)
+    U, S, V = merge_row(l_U, l_S, l_V, ommit_V)
+    if not isinstance(V1, np.ndarray):
+        V = np.dot(U.T*S, X)
+    return U, S, V
 
-def merge_blocks(l_U, l_S):
-    print("merge blocks")
+
+def merge_row(l_U, l_S, l_V, ommit_V=False):
+    print("merge row blocks")
     levels = int(np.log2(len(l_U)))
     for j in range(levels):
         print("level: ", j, "(", len(l_U), "slices)")
         Ni = len(l_U)
-        l_Ut, l_St = l_U, l_S
+        l_Ut, l_St, l_Vt = l_U, l_S, l_V
+        if ommit_V:
+            l_V = [None for i in range(Ni)]
         Ni2 = (len(l_U)+1) // 2
-        l_U, l_S = [None for i in range(Ni2)], [None for i in range(Ni2)]
+        l_U, l_S, l_V = [None for i in range(Ni2)], [None for i in range(Ni2)], [None for i in range(Ni2)]
+        c = 0
         for i in range(0, Ni, 2):
             if i+1 >= Ni:
                 print(i, "nothing to merge")
                 U, S = l_Ut[i], l_St[i]
             else:
                 tic = timeit.default_timer()
-                U, S = merge_horizontally(l_Ut[i], l_St[i], l_Ut[i+1], l_St[i+1])
+                U, S, V = merge_horizontally2(l_Ut[i], l_St[i], l_Vt[i],
+                                              l_Ut[i+1], l_St[i+1], l_Vt[i+1])
                 toc = timeit.default_timer()
                 print("merging block", i, "and", i+1, "took ", toc-tic, "seconds")
-            l_U[i], l_S[i] = U, S
+            l_U[c], l_S[c], l_V[c] = U, S, V
+            c += 1
         print(len(l_U), "blocks remaining")
+    print()
+    return U, S, V
+
+def merge_column(l_S, l_V):
+    print("merge column blocks")
+    levels = int(np.log2(len(l_V)))
+    for j in range(levels):
+        print("level: ", j, "(", len(l_V), "slices)")
+        Ni = len(l_V)
+        l_Vt, l_St = l_V, l_S
+        Ni2 = (len(l_V)+1) // 2
+        l_V, l_S = [None for i in range(Ni2)], [None for i in range(Ni2)]
+        for i in range(0, Ni, 2):
+            if i+1 >= Ni:
+                print(i, "nothing to merge")
+                S, V = l_St[i], l_Vt[i]
+            else:
+                tic = timeit.default_timer()
+                S, V = merge_vertically(None, l_St[i], l_Vt[i],
+                                        None, l_St[i+1], l_Vt[i+1])
+                toc = timeit.default_timer()
+                print("merging block", i, "and", i+1, "took ", toc-tic, "seconds")
+            l_S[i], l_V[i] = S, V
+        print(len(l_V), "blocks remaining")
     print()
     return U, S
 
 def merge_horizontally(U1, S1, V1, U2, S2, V2):
     # V may be none
+    # adapted from eq. 9 and 10
     # merging two bocks, [X1, X2] = [X]
     # print("1D?:", S1.shape, S2.shape)
     # k, l = S1.shape[0], S2.shape[0]
     m, k = U1.shape
     m, l = U2.shape
-    # print("m, k = ", m, k)
-    # print("m, l = ", m, l)
+    print("m, k = ", m, k)
+    print("m, l = ", m, l)
 
     # k, n1 = V1.shape
     # l, n2 = V2.shape
@@ -164,7 +247,7 @@ def merge_horizontally(U1, S1, V1, U2, S2, V2):
     # print("1D?: k, l = ", S1.shape, S2.shape)
 
     E = np.zeros((k+l, k+l))  # n, n
-    U1TU2 = dot(U1.T, U2)  # k, l
+    U1TU2 = dot(U1.T, U2)  # k, l  # eats up all the computation time!!!
     U0 = U2 - dot(U1, U1TU2)  # m, l
     Q, R = qr(U0)
     # print(Q.shape, R.shape, np.allclose(np.dot(Q, R), U0))
@@ -174,26 +257,38 @@ def merge_horizontally(U1, S1, V1, U2, S2, V2):
     E[k:, k:] = R*S2.reshape(1, l)
     UE, S, VE = svd(E, full_matrices=False)
     # print(UE.shape, SE.shape, VE.shape)
-    U1Q = np.empty((m, k+l))
-    U1Q[:, :k] = U1
-    U1Q[:, k:] = Q
-    U = dot(U1Q, UE)
-    if isinstance(U1, np.ndarray):
+
+    # U1Q = np.zeros((m, k+l))
+    # U1Q[:, :k] = U1
+    # U1Q[:, k:] = Q
+    # U = dot(U1Q, UE)
+    U = dot(U1, UE[:k, :]) + dot(Q, UE[k:, :])
+    # print(np.allclose(U, U2))
+    if isinstance(V1, np.ndarray):
         k, n1 = V1.T.shape
         l, n2 = V2.T.shape
-        # print("k, n1 = ", k, n1)
-        # print("k, n2 = ", l, n2)
-        V1V2 = np.empty((k+l, n1+n2))
-        V1V2[:k, :n1] = V1.T
-        V1V2[k:, n1:] = V2.T
-        V = np.dot(VE.T, V1V2)
+        r = len(S)
+        # # print("k, n1 = ", k, n1)
+        # # print("k, n2 = ", l, n2)
+        # V1V2 = np.zeros((k+l, n1+n2))
+        # V1V2[:k, :n1] = V1.T
+        # V1V2[k:, n1:] = V2.T
+        # V = dot(VE.T, V1V2)
+        # V22 = np.zeros((k+l, n1+n2))
+        V = np.empty((r, n1+n2))
+        V[:k, :n1] = dot(VE.T[:k, :k], V1.T)
+        V[k:, :n1] = dot(VE.T[k:, :k], V1.T)
+        V[:k, n1:] = dot(VE.T[:k, k:], V2.T)
+        V[k:, n1:] = dot(VE.T[k:, k:], V2.T)
+        # V22[k:] = dot(VE.T[k:], V2.T)
+        # print(np.allclose(V, V22))
         return U, S, V.T
     else:
-        return U, S
+        return U, S, None
 
 def merge_horizontally2(U1, S1, V1, U2, S2, V2):
     # V may be none
-    # eq 9 and eq 10
+    # eq 8
     # merging two bocks, [X1, X2] = [X]
     # print("1D?:", S1.shape, S2.shape)
     # k, l = S1.shape[0], S2.shape[0]
@@ -207,18 +302,61 @@ def merge_horizontally2(U1, S1, V1, U2, S2, V2):
     E[:, :k] = U1*S1.reshape(1, k)
     E[:, k:] = U2*S2.reshape(1, l)
     U, S, VE = svd(E, full_matrices=False)
-    if isinstance(U1, np.ndarray):
+    if isinstance(V1, np.ndarray):
+        # # print("computing V, may take some time....")
         k, n1 = V1.T.shape
         l, n2 = V2.T.shape
-        # print("k, n1 = ", k, n1)
-        # print("k, n2 = ", l, n2)
-        V1V2 = np.empty((k+l, n1+n2))
-        V1V2[:k, :n1] = V1.T
-        V1V2[k:, n1:] = V2.T
-        V = np.dot(VE.T, V1V2)
+        r = len(S)
+        # # print("k, n1 = ", k, n1)
+        # # print("k, n2 = ", l, n2)
+        # V1V2 = np.zeros((k+l, n1+n2))
+        # V1V2[:k, :n1] = V1.T
+        # V1V2[k:, n1:] = V2.T
+        # V = dot(VE.T, V1V2)
+        # rather sector wise:
+        V = np.empty((r, n1+n2))
+        V[:k, :n1] = dot(VE.T[:k, :k], V1.T)
+        V[k:, :n1] = dot(VE.T[k:, :k], V1.T)
+        V[:k, n1:] = dot(VE.T[:k, k:], V2.T)
+        V[k:, n1:] = dot(VE.T[k:, k:], V2.T)
         return U, S, V.T
     else:
-        return U, S
+        return U, S, None
+
+# def merge_horizontally3(U1, S1, V1, U2, S2, V2):
+#     # V may be none
+#     # eq 9 and eq 10
+#     # merging two bocks, [X1, X2] = [X]
+#     # print("1D?:", S1.shape, S2.shape)
+#     # k, l = S1.shape[0], S2.shape[0]
+#     m, k = U1.shape
+#     m, l = U2.shape
+#     # print("m, k = ", m, k)
+#     # print("m, l = ", m, l)
+#     # print("1D?: k, l = ", S1.shape, S2.shape)
+
+#     E = np.zeros((m, k+l))  # n, n
+#     E[:, :k] = U1*S1.reshape(1, k)
+#     E[:, k:] = U2*S2.reshape(1, l)
+#     U, S, VE = svd(E, full_matrices=False)
+#     if isinstance(V1, np.ndarray):
+#         # # print("computing V, may take some time....")
+#         # k, n1 = V1.T.shape
+#         # l, n2 = V2.T.shape
+#         # # print("k, n1 = ", k, n1)
+#         # # print("k, n2 = ", l, n2)
+#         # V1V2 = np.zeros((k+l, n1+n2))
+#         # V1V2[:k, :n1] = V1.T
+#         # V1V2[k:, n1:] = V2.T
+#         # V = dot(VE.T, V1V2)
+#         V = np.empty((k+l, k+l))
+#         V[:k, :k] = dot(VE.T[:k, :k], V1.T)
+#         V[k:, :k] = dot(VE.T[k:, :k], V1.T)
+#         V[:k, k:] = dot(VE.T[:k, k:], V2.T)
+#         V[k:, k:] = dot(VE.T[k:, k:], V2.T)
+#         return U, S, V.T
+#     else:
+#         return U, S
 
 def merge_vertically(U1, S1, V1, U2, S2, V2):
     # U may be none
@@ -242,14 +380,20 @@ def merge_vertically(U1, S1, V1, U2, S2, V2):
     E[k:, :] = V2.T*S2.reshape(l, 1)
     UE, S, V = svd(E, full_matrices=False)
     if isinstance(U1, np.ndarray):
+        # # print("computing U, may take some time....")
         m1, k = U1.shape
         m2, l = U2.shape
-        # print("m1, k = ", m1, k)
-        # print("m2, l = ", m2, l)
-        U1U2 = np.empty((m1+m2, k+l))
-        U1U2[:m1, :k] = U1
-        U1U2[m1:, k:] = U2
-        U = np.dot(U1U2, UE)
+        # # print("m1, k = ", m1, k)
+        # # print("m2, l = ", m2, l)
+        # U1U2 = np.zeros((m1+m2, k+l))
+        # U1U2[:m1, :k] = U1
+        # U1U2[m1:, k:] = U2
+        # U = dot(U1U2, UE)
+        r = len(S)
+        U = np.empty((m1+m2, r))
+        U[:m1] = dot(U1, UE[:k])
+        U[m1:] = dot(U2, UE[k:])
+        # print(np.allclose(U, U22))
         return U, S, V
     else:
         return S, V
@@ -529,40 +673,145 @@ class POD(Data):
         X_approx = np.dot(U_hat*S_hat, V_hat.T)  # n, d1
         return X_approx
 
-
-if __name__ == "__main__":
-    path = "C:/Users/florianma/Documents/data/freezing_cavity/"
-    # X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots_cavity(path)
-    X = np.random.rand(1000, 1000)
+def test_merge(N):
+    assert N > 4
+    # N = 300
+    X = np.random.rand(N, N)
     U_, S_, V_ = svd(X, False)
 
 
-    m1, n1 = 345, 456
-    print("split vertically: X = [[X1], [X2]]")
+    m1, n1 = np.random.randint(1, N-1), np.random.randint(1, N-1)
+    print("split vertically: X = [[X1], [X2]]....", end=" ")
     U1, S1, V1 = svd(X[:m1, :], False)
     U2, S2, V2 = svd(X[m1:, :], False)
-    print(U1.shape, S1.shape, V1.T.shape)
-    print(U2.shape, S2.shape, V2.T.shape)
+    # print(U1.shape, S1.shape, V1.T.shape)
+    # print(U2.shape, S2.shape, V2.T.shape)
 
     U, S, V = merge_vertically(U1, S1, V1, U2, S2, V2)
-    print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
-    print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
+    # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
+    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    # print(X/np.dot(U*S, V.T))
+    assert np.allclose(np.abs(U/U_), 1), "merge_vertically faied, U differs."  # 59, 41
+    assert np.allclose(S, S_, atol=1e-5, rtol=1e-5), "merge_vertically faied, S differs."
+    assert np.allclose(np.abs(V/V_), 1), "merge_vertically faied, V differs."
+    print("O.K.")
 
-    print("split horizontally: X = [X1, X2]")
+    print("split horizontally: X = [X1, X2]....", end=" ")
     U1, S1, V1 = svd(X[:, :n1], False)
     U2, S2, V2 = svd(X[:, n1:], False)
-    print(U1.shape, S1.shape, V1.T.shape)
-    print(U2.shape, S2.shape, V2.T.shape)
+    # print(U1.shape, S1.shape, V1.T.shape)
+    # print(U2.shape, S2.shape, V2.T.shape)
 
     U, S, V = merge_horizontally(U1, S1, V1, U2, S2, V2)
-    print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
-    print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
+    # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
+    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    assert np.allclose(np.abs(U/U_), 1), "merge_horizontally faied, U differs."
+    assert np.allclose(S, S_, atol=1e-5, rtol=1e-5), "merge_horizontally faied, S differs."
+    assert np.allclose(np.abs(V/V_), 1), "merge_horizontally faied, V differs."
+
     U, S, V = merge_horizontally2(U1, S1, V1, U2, S2, V2)
-    print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
-    print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
+    # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
+    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    assert np.allclose(np.abs(U/U_), 1), "merge_horizontally2 faied, U differs."
+    assert np.allclose(S, S_, atol=1e-5, rtol=1e-5), "merge_horizontally2 faied, S differs."
+    assert np.allclose(np.abs(V/V_), 1), "merge_horizontally2 faied, V differs."
+    print("O.K.")
+
+
+if __name__ == "__main__":
+    if "X_all" not in locals():
+        path = "C:/Users/florianma/Documents/data/freezing_cavity/"
+        X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots_cavity(path)
+    X = X_all[:5000, :5000]
+    # X_all = np.random.rand(2000, 2000)
+
+
+    t0 = timeit.default_timer()
+    U1, S1, V1 = svd(X, False)
+    t1 = timeit.default_timer()
+    for n in [2, 4, 8, 16, 32]:
+        t2 = timeit.default_timer()
+        U2, S2, V2 = row_svd(X, n, .999, True)
+        t3 = timeit.default_timer()
+        U3, S3, V3 = row_svd(X, n, .999, False)
+        t4 = timeit.default_timer()
+        print("SVD1: ", t1-t0)
+        print("SVD2: ", t3-t1)
+        print("SVD3: ", t4-t3)
+        print(np.allclose(X, np.dot(U1*S1, V1.T)))
+        print(np.allclose(X, np.dot(U2*S2, V2.T)))
+        print(np.allclose(X, np.dot(U3*S3, V3.T)))
+
+    # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
+    # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
+    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+
+    asd
+    for N in [100, 250, 500, 1000]:
+        # N = 2000
+        M = N
+        m1, n1 = M//2, N//2
+        X = X_all[:M, :N]
+        t0 = timeit.default_timer()
+        U_, S_, V_ = svd(X, False)
+        t1 = timeit.default_timer()
+        # X = np.random.rand(1000, 1000)
+        U_, S_, V_ = svd(X, False)
+        # print("split vertically: X = [[X1], [X2]]", M, N)
+        # t2 = timeit.default_timer()
+        # try:
+        #     U1, S1, V1 = svd(X[:m1, :], False)
+        # except:
+        #     U1, S1, V1 = timed_svd_truncated(X[:m1, :], False)
+        # U2, S2, V2 = svd(X[m1:, :], False)
+        # t3 = timeit.default_timer()
+        # print(t1-t0)
+        # print(t3-t2)
+
+        # t1 = timeit.default_timer()
+        # U, S, V = merge_vertically(U1, S1, V1, U2, S2, V2)
+        # t2 = timeit.default_timer()
+        # print(np.allclose(X, np.dot(U*S, V.T)))
+
+
+
+
+        print("split horizontally: X = [X1, X2]")
+        U1, S1, V1 = svd(X[:, :n1], False)
+        U2, S2, V2 = svd(X[:, n1:], False)
+
+
+        t3 = timeit.default_timer()
+        # U, S, V = merge_horizontally(U1, S1, V1, U2, S2, V2)
+        t4 = timeit.default_timer()
+        # print(np.allclose(X, np.dot(U*S, V.T)))
+        t5 = timeit.default_timer()
+        U, S, V = merge_horizontally2(U1, S1, V1, U2, S2, V2)
+        t6 = timeit.default_timer()
+        U, S = merge_horizontally2(U1, S1, None, U2, S2, None)
+        t62 = timeit.default_timer()
+        print(t6-t5)
+        print(t62-t5)
+        print(np.allclose(X, np.dot(U*S, V.T)))
+
+        # merge_blocks(l_U, l_S)
+        t7 = timeit.default_timer()
+        U, S = merge_row([U1, U2], [S1, S2])
+        t8 = timeit.default_timer()
+        print(np.allclose(X, np.dot(U*S, V.T)))
+        print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
+        print(U.shape, U_.shape, np.allclose(np.abs(U), np.abs(U_)))
+        # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
+        print(M, N)
+        # print("merge_vertically", t2-t1)
+        print("merge_horizontally", t4-t3)
+        # print("merge_horizontally2", t6-t5)
+        print("merge_row", t8-t7)
+        print()
+        print()
 
 
 
@@ -579,15 +828,19 @@ if __name__ == "__main__":
     # U, S, V = svd(X, full_matrices=False)
     # np.linalg.svd()
     # X = np.random.rand(2000, 2000)
-    # for n in range(100, 2000, 100):
-    #     dot(X[:, :n], X[:n, :])
-    #     dot(X[:n, :], X[:, :n])
-    #     dot(X[:n, :n], X[:n, :n])
-    # # for n in range(100, 1000, 25):
+    # # for n in range(100, 2000, 100):
+    # #     dot(X[:, :n], X[:n, :])
+    # #     dot(X[:n, :], X[:, :n])
+    # #     dot(X[:n, :n], X[:n, :n])
+    # # # for n in range(100, 1000, 25):
     # for n in range(100, 2000, 100):
     #     svd(X[:n, :], False)
     #     svd(X[:, :n], False)
     #     svd(X[:n, :n], False)
+    # for n in range(100, 2000, 100):
+    #     timed_svd2(X[:n, :], False)
+    #     timed_svd2(X[:, :n], False)
+    #     timed_svd2(X[:n, :n], False)
 
 
 
