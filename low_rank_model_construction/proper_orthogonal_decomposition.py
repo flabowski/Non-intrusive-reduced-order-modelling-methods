@@ -8,90 +8,81 @@ import numpy as np
 from nirom.src.cross_validation import load_snapshots_cavity, plot_snapshot_cav
 import tensorflow as tf
 import matplotlib.pyplot as plt
-plot_width = 16
 import timeit
-
-# def comp_time(x):
-#     x1 = 2.5866*x**2 + 1.8577*x - 0.2027
-#     x2 = 4*(2.5866*(x/2)**2 + 1.8577*(x/2) - 0.2027)
-#     return 2.5866*x**2 + 1.8577*x - 0.2027
-# x = np.linspace(0, 5, 100)
-# plt.plot(x, 2.5866*x**2 + 1.8577*x)
-# plt.plot(x, 4*(2.5866*(x/2)**2 + 1.8577*(x/2)))
+plot_width = 16
+LINALG_LIB = "tensorflow"
+timed = True
 
 
-def timed_dot(a, b):
-    tic = timeit.default_timer()
-    c = np.dot(a, b)
-    toc = timeit.default_timer()
-    print("dot of \t {:.0f} \t {:.0f}  \t with \t {:.0f} \t {:.0f}  \t took \t {:.4} \t seconds.".format(a.shape[0], a.shape[1], b.shape[0], b.shape[1], toc-tic))
-    return c
-
-def timed_qr(U0):
-    tic = timeit.default_timer()
-    q, r = np.linalg.qr(U0)
-    toc = timeit.default_timer()
-    # print("qr decomposition of U0 (shape ", U0.shape, ") took {:.1f} seconds.".format(toc-tic))
-    print("qr decomposition of U0 \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(U0.shape[0], U0.shape[1], toc-tic))
-    return q, r
-
-
-def svdnp(X, full_matrices):
-    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
-    return U, S, Vh.T
-
-def timed_svdnp(X, full_matrices):
-    tic = timeit.default_timer()
-    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
-    toc = timeit.default_timer()
-    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
-    return U, S, Vh.T
-
-def timed_svdnp_truncated(X, full_matrices):
-    tic = timeit.default_timer()
-    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
-    toc = timeit.default_timer()
-    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
-    return truncate_basis(U, S, Vh.T, .999)
-
-
-def svd(X, full_matrices):
+def tf_svd(X, full_matrices=False):
     S, U, V = tf.linalg.svd(X, full_matrices=full_matrices)
-    S, U, V = S.numpy(), U.numpy(), V.numpy()
-    return U, S, V
-
-def timed_svd(X, full_matrices):
-    tic = timeit.default_timer()
-    S, U, V = tf.linalg.svd(X, full_matrices=full_matrices)
-    S, U, V = S.numpy(), U.numpy(), V.numpy()
-    toc = timeit.default_timer()
-    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
-    return U, S, V
-
-def timed_svd_truncated(X, full_matrices):
-    tic = timeit.default_timer()
-    S, U, V = tf.linalg.svd(X, full_matrices=full_matrices)
-    S, U, V = S.numpy(), U.numpy(), V.numpy()
-    toc = timeit.default_timer()
-    print("SVD of X \t {:.0f} \t {:.0f}  \t  took \t {:.4} \t seconds.".format(X.shape[0], X.shape[1], toc-tic))
-    return truncate_basis(U, S, V, .999)
+    return U, S, transpose(V)
 
 
+def np_svd(X, full_matrices=False):
+    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
+    return U, S, Vh
 
 
-qr = np.linalg.qr
-dot = np.dot
+if LINALG_LIB == "tensorflow":
+    qr = tf.linalg.qr
+    transpose = tf.transpose
+    svd = tf_svd
+    matmul = tf.matmul
+    reshape = tf.reshape
+elif LINALG_LIB == "numpy":
+    qr = np.linalg.qr
+    transpose = np.transpose
+    svd = np_svd
+    matmul = np.matmul
+    reshape = np.reshape
 
-# svd = timed_svd
-# dot = timed_dot
-# qr = timed_qr
 
-# svd = timed_svdnp_truncated
-# svd = timed_svd_truncated
+# def timed_matmul(a, b):
+#     tic = timeit.default_timer()
+#     if LINALG_LIB == "tensorflow":
+#         c = tf.matmul(a, b)
+#     elif LINALG_LIB == "numpy":
+#         c = np.matmul(a, b)
+#     toc = timeit.default_timer()
+#     print("matmul of \t{:.0f}\t{:.0f}\t with \t{:.0f}\t{:.0f}\t took\t{:.4}\t seconds.".format(
+#         a.shape[0], a.shape[1], b.shape[0], b.shape[1], toc-tic))
+#     return c
+
+
+# def timed_qr(U0):
+#     tic = timeit.default_timer()
+#     q, r = qr(U0)
+#     if LINALG_LIB == "tensorflow":
+#         q, r = tf.qr(U0)
+#     elif LINALG_LIB == "numpy":
+#         q, r = np.qr(U0)
+#     toc = timeit.default_timer()
+#     print("qr decomposition of U0 \t{:.0f}\t{:.0f}\t took \t{:.4}\t seconds.".format(
+#         U0.shape[0], U0.shape[1], toc-tic))
+#     return q, r
+
+
+# def timed_svd(X, full_matrices=False):
+#     tic = timeit.default_timer()
+#     if LINALG_LIB == "tensorflow":
+#         U, S, VT = tf_svd(X, full_matrices=full_matrices)
+#     elif LINALG_LIB == "numpy":
+#         U, S, VT = np_svd(X, full_matrices=full_matrices)
+#     toc = timeit.default_timer()
+#     print("SVD of X \t{:.0f}\t{:.0f}\t  took \t{:.4}\t seconds.".format(
+#         X.shape[0], X.shape[1], toc-tic))
+#     return U, S, VT
+
+# # if timed:
+# #     qr = timed_qr
+# #     svd = timed_svd
+# #     matmul = timed_matmul
+
 
 def plotS(S, eps):
     cum_en = np.cumsum(S)/np.sum(S)
-    r = np.sum(cum_en<eps)
+    r = np.sum(cum_en < eps)
     n = len(S)
     fig, axs = plt.subplots(2, 1, sharex=True,
                             figsize=(plot_width/2.54, 10/2.54))
@@ -117,7 +108,8 @@ def plotS(S, eps):
     plt.show()
     return
 
-def truncate_basis(U, S, V, eps):
+
+def truncate_basis(U, S, VT, eps):
     """
     reduce rank of basis to low rank r
     """
@@ -125,17 +117,19 @@ def truncate_basis(U, S, V, eps):
         r = 1
     else:
         cum_en = np.cumsum(S)/np.sum(S)
-        r = np.sum(cum_en<eps)
+        r = np.sum(cum_en < eps)
+    if r <= 1:
+        r = 1
     U_hat = U[:, :r]  # (n, r)
     S_hat = S[:r]  # (r, r) / (r,) wo  non zero elements
-    V_hat = V[:, :r]  # (d1, r)
+    VT_hat = VT[:r, :]  # (r, d1)
     # plotS(S, eps)
-    print(len(S), "->", r)
-    return U_hat, S_hat, V_hat
+    # print(len(S), "->", r, end="| ")
+    return U_hat, S_hat, VT_hat
 
 
-def extend_svd(U, S, V, X, X_additional):
-    X0 = X_additional - np.dot(U, np.dot(U.T, X_additional))
+def extend_svd(U, S, VT, X, X_additional):
+    X0 = X_additional - matmul(U, matmul(transpose(U), X_additional))
     q = X_additional / np.linalg.norm(X_additional, axis=0)
 
 
@@ -146,90 +140,123 @@ def hierarchical_svd(X, d, c, eps):
     for j in range(d):
         print("slice", j, "---------------------------")
         s, e = j*Nd, Nd*(j+1)
-        if e>m: e=m
+        if e > m:
+            e = m
         # print("slice", j)
         Uc, Sc = row_svd(X[s:e, :], c, eps)
-        SV = dot(Uc.T, X[s:e, :])
-        U, S, V = svd(SV, full_matrices=False)
+        SVT = matmul(transpose(Uc), X[s:e, :])
+        U, S, VT = truncate_basis(*svd(SVT), eps=eps)
         print(np.allclose(Sc, S))
         # TODO: check if thats the same as tf.linalg.svd(X[s:e, :], full_matrices=False)
-        # print(np.allclose(Vc, V))
-        l_S[j], U, l_V[j] = S, U, V
-    # U, S = merge_blocks(l_V, l_S)  # does not make sense
-    return U, S, V
+        # print(np.allclose(VTc, VT))
+        l_S[j], U, l_V[j] = S, U, VT
+    # U, S = merge_blocks(l_V, l_S, eps)  # does not make sense
+    return U, S, VT
 
-def row_svd(X, c, eps, ommit_V):
+
+def row_svd(X, c, eps, ommit_V, merger):
     m, n = X.shape
-    l_U, l_S, l_V = [None for i in range(c)], [None for i in range(c)], [None for i in range(c)]
     Nc = np.ceil(n/c).astype(np.int32)
+    t0 = timeit.default_timer()
+    r = 0
+    # there might not be enough data for c blocks
+    c = np.ceil(n/Nc).astype(np.int32)
+    l_U, l_S, l_V = [None for i in range(c)], [None for i in range(c)], [
+        None for i in range(c)]
     for j in range(c):
-        print("block", j)
         s, e = j*Nc, Nc*(j+1)
-        if e>n: e=n
-        # print(j, s, e, X[:, s:e].shape)
-        U, S, V = svd(X[:, s:e], full_matrices=False)
-        l_U[j], l_S[j], l_V[j] = U, S, V
+        if e > n:
+            e = n
+        U, S, VT = truncate_basis(*svd(X[:, s:e]), eps)
+        r += len(S)
+        l_U[j], l_S[j], l_V[j] = U, S, VT
         # plotS(S, .999)
         # TODO: truncate!
-    U, S, V = merge_row(l_U, l_S, l_V, ommit_V)
-    if not isinstance(V1, np.ndarray):
-        V = np.dot(U.T*S, X)
-    return U, S, V
+    t1 = timeit.default_timer()
+    print("svds took {:.4f} s, reduced rank: {:.0f}".format(t1-t0, r))
+    U, S, VT = merge_row(l_U, l_S, l_V, ommit_V, merger, eps)
+    t2 = timeit.default_timer()
+    print("merging took {:.4f} s, reduced rank: {:.0f}".format(t2-t1, len(S)))
+    if not (isinstance(VT, np.ndarray) | isinstance(VT, tf.Tensor)):
+        print("painfully slow...")
+        VT = matmul(transpose(U)*S[:, None], X)
+    return U, S, VT
 
 
-def merge_row(l_U, l_S, l_V, ommit_V=False):
-    print("merge row blocks")
+def merge_row(l_U, l_S, l_V, ommit_V, merger, eps):
+    # print("merge row blocks")
     levels = int(np.log2(len(l_U)))
+    print("merge row blocks. r1->r2: ", end="")
     for j in range(levels):
-        print("level: ", j, "(", len(l_U), "slices)")
+        # print("level: ", j, "(", len(l_U), "slices)")
         Ni = len(l_U)
         l_Ut, l_St, l_Vt = l_U, l_S, l_V
         if ommit_V:
-            l_V = [None for i in range(Ni)]
+            l_Vt = [None for i in range(Ni)]
         Ni2 = (len(l_U)+1) // 2
-        l_U, l_S, l_V = [None for i in range(Ni2)], [None for i in range(Ni2)], [None for i in range(Ni2)]
-        c = 0
+        l_U, l_S, l_V = [None for i in range(Ni2)], [None for i in range(Ni2)], [
+            None for i in range(Ni2)]
+        c = 0  # counter
+        r1 = 0  # rank of the ROM
+        r2 = 0  # rank of the ROM
         for i in range(0, Ni, 2):
             if i+1 >= Ni:
-                print(i, "nothing to merge")
-                U, S = l_Ut[i], l_St[i]
+                # print(i, "nothing to merge")
+                U, S, VT = l_Ut[i], l_St[i], l_Vt[i]
+                r2 += len(S)
             else:
-                tic = timeit.default_timer()
-                U, S, V = merge_horizontally2(l_Ut[i], l_St[i], l_Vt[i],
-                                              l_Ut[i+1], l_St[i+1], l_Vt[i+1])
-                toc = timeit.default_timer()
-                print("merging block", i, "and", i+1, "took ", toc-tic, "seconds")
-            l_U[c], l_S[c], l_V[c] = U, S, V
+                # tic = timeit.default_timer()
+                # len(l_Vt)
+                # if isinstance(l_Vt[i], np.ndarray) | isinstance(l_Vt[i], tf.Tensor):
+                #     if l_Vt[i].shape[0] ==  17:
+                #         print(l_Ut[i].shape, l_Ut[i+1].shape)
+                #         print(l_St[i].shape, l_St[i+1].shape)
+                #         print(l_Vt[i].shape, l_Vt[i+1].shape)
+                # print(l_Vt[i] - l_Vt[i+1])
+                U, S, VT = merger(l_Ut[i], l_St[i], l_Vt[i],
+                                  l_Ut[i+1], l_St[i+1], l_Vt[i+1], eps)
+                r2 += len(l_St[i]) + len(l_St[i+1])
+                # toc = timeit.default_timer()
+                # print("level: ", j, "(", len(l_V), "slices). merging block", i, "and", i+1, "took ", toc-tic, "seconds")
+            # if isinstance(VT, np.ndarray) | isinstance(VT, tf.Tensor):
+            #     print(U.shape, S.shape, VT.shape)
+            #     if U.shape[1] != VT.shape[0]:
+            #         print()
+            r1 += len(S)
+            l_U[c], l_S[c], l_V[c] = U, S, VT
             c += 1
-        print(len(l_U), "blocks remaining")
+        print("{:.0f}->{:.0f}".format(r2, r1), end=" | ")
+        # print(len(l_U), "blocks remaining")
     print()
-    return U, S, V
+    return U, S, VT
 
-def merge_column(l_S, l_V):
-    print("merge column blocks")
+
+def merge_column(l_S, l_V, eps):
+    # print("merge column blocks")
     levels = int(np.log2(len(l_V)))
     for j in range(levels):
-        print("level: ", j, "(", len(l_V), "slices)")
+        # print("level: ", j, "(", len(l_V), "slices)")
         Ni = len(l_V)
         l_Vt, l_St = l_V, l_S
         Ni2 = (len(l_V)+1) // 2
         l_V, l_S = [None for i in range(Ni2)], [None for i in range(Ni2)]
         for i in range(0, Ni, 2):
             if i+1 >= Ni:
-                print(i, "nothing to merge")
-                S, V = l_St[i], l_Vt[i]
+                # print(i, "nothing to merge")
+                S, VT = l_St[i], l_Vt[i]
             else:
-                tic = timeit.default_timer()
-                S, V = merge_vertically(None, l_St[i], l_Vt[i],
-                                        None, l_St[i+1], l_Vt[i+1])
-                toc = timeit.default_timer()
-                print("merging block", i, "and", i+1, "took ", toc-tic, "seconds")
-            l_S[i], l_V[i] = S, V
-        print(len(l_V), "blocks remaining")
-    print()
-    return U, S
+                # tic = timeit.default_timer()
+                S, VT = merge_vertically(None, l_St[i], l_Vt[i],
+                                         None, l_St[i+1], l_Vt[i+1], eps)
+                # toc = timeit.default_timer()
+                # print("level: ", j, "(", len(l_V), "slices). merging block", i, "and", i+1, "took ", toc-tic, "seconds")
+            l_S[i], l_V[i] = S, VT
+        # print(len(l_V), "blocks remaining")
+    # print()
+    return U, S, VT
 
-def merge_horizontally(U1, S1, V1, U2, S2, V2):
+
+def merge_horizontally(U1, S1, VT1, U2, S2, VT2, eps):
     # V may be none
     # adapted from eq. 9 and 10
     # merging two bocks, [X1, X2] = [X]
@@ -237,8 +264,8 @@ def merge_horizontally(U1, S1, V1, U2, S2, V2):
     # k, l = S1.shape[0], S2.shape[0]
     m, k = U1.shape
     m, l = U2.shape
-    print("m, k = ", m, k)
-    print("m, l = ", m, l)
+    # print("m, k = ", m, k)
+    # print("m, l = ", m, l)
 
     # k, n1 = V1.shape
     # l, n2 = V2.shape
@@ -247,48 +274,50 @@ def merge_horizontally(U1, S1, V1, U2, S2, V2):
     # print("1D?: k, l = ", S1.shape, S2.shape)
 
     E = np.zeros((k+l, k+l))  # n, n
-    U1TU2 = dot(U1.T, U2)  # k, l  # eats up all the computation time!!!
-    U0 = U2 - dot(U1, U1TU2)  # m, l
+    # k, l  # eats up all the computation time!!!
+    U1TU2 = matmul(transpose(U1), U2)
+    U0 = U2 - matmul(U1, U1TU2)  # m, l
     Q, R = qr(U0)
-    # print(Q.shape, R.shape, np.allclose(np.dot(Q, R), U0))
+    # print(Q.shape, R.shape, np.allclose(matmul(Q, R), U0))
 
     E[:k, :k] = np.diag(S1)
-    E[:k, k:] = U1TU2*S2.reshape(1, l)
-    E[k:, k:] = R*S2.reshape(1, l)
-    UE, S, VE = svd(E, full_matrices=False)
-    # print(UE.shape, SE.shape, VE.shape)
+    E[:k, k:] = U1TU2*reshape(S2, (1, l))
+    E[k:, k:] = R*reshape(S2, (1, l))
+    UE, S, VTE = truncate_basis(*svd(E), eps=eps)
+    # print(UE.shape, SE.shape, VTE.shape)
 
     # U1Q = np.zeros((m, k+l))
     # U1Q[:, :k] = U1
     # U1Q[:, k:] = Q
-    # U = dot(U1Q, UE)
-    U = dot(U1, UE[:k, :]) + dot(Q, UE[k:, :])
+    # U = matmul(U1Q, UE)
+    U = matmul(U1, UE[:k, :]) + matmul(Q, UE[k:, :])
     # print(np.allclose(U, U2))
-    if isinstance(V1, np.ndarray):
-        k, n1 = V1.T.shape
-        l, n2 = V2.T.shape
+    if isinstance(VT1, np.ndarray) | isinstance(VT1, tf.Tensor):
+        k, n1 = VT1.shape
+        l, n2 = VT2.shape
         r = len(S)
         # # print("k, n1 = ", k, n1)
         # # print("k, n2 = ", l, n2)
         # V1V2 = np.zeros((k+l, n1+n2))
-        # V1V2[:k, :n1] = V1.T
-        # V1V2[k:, n1:] = V2.T
-        # V = dot(VE.T, V1V2)
+        # V1V2[:k, :n1] = VT1
+        # V1V2[k:, n1:] = VT2
+        # VT = matmul(VTE, V1V2)
         # V22 = np.zeros((k+l, n1+n2))
-        V = np.empty((r, n1+n2))
-        V[:k, :n1] = dot(VE.T[:k, :k], V1.T)
-        V[k:, :n1] = dot(VE.T[k:, :k], V1.T)
-        V[:k, n1:] = dot(VE.T[:k, k:], V2.T)
-        V[k:, n1:] = dot(VE.T[k:, k:], V2.T)
-        # V22[k:] = dot(VE.T[k:], V2.T)
+        # V22[k:] = matmul(VTE[k:], VT2)
         # print(np.allclose(V, V22))
-        return U, S, V.T
+        VT = np.empty((r, n1+n2))
+        VT[:k, :n1] = matmul(VTE[:k, :k], VT1)
+        VT[k:, :n1] = matmul(VTE[k:, :k], VT1)
+        VT[:k, n1:] = matmul(VTE[:k, k:], VT2)
+        VT[k:, n1:] = matmul(VTE[k:, k:], VT2)
+        return U, S, VT
     else:
         return U, S, None
 
-def merge_horizontally2(U1, S1, V1, U2, S2, V2):
+
+def merge_horizontally2(U1, S1, VT1, U2, S2, VT2, eps):
     # V may be none
-    # eq 8
+    # eq 8VT1
     # merging two bocks, [X1, X2] = [X]
     # print("1D?:", S1.shape, S2.shape)
     # k, l = S1.shape[0], S2.shape[0]
@@ -299,73 +328,41 @@ def merge_horizontally2(U1, S1, V1, U2, S2, V2):
     # print("1D?: k, l = ", S1.shape, S2.shape)
 
     E = np.zeros((m, k+l))  # n, n
-    E[:, :k] = U1*S1.reshape(1, k)
-    E[:, k:] = U2*S2.reshape(1, l)
-    U, S, VE = svd(E, full_matrices=False)
-    if isinstance(V1, np.ndarray):
-        # # print("computing V, may take some time....")
-        k, n1 = V1.T.shape
-        l, n2 = V2.T.shape
+    E[:, :k] = U1*reshape(S1, (1, k))
+    E[:, k:] = U2*reshape(S2, (1, l))
+    U, S, VTE = truncate_basis(*svd(E), eps=eps)
+    if isinstance(VT1, np.ndarray) | isinstance(VT1, tf.Tensor):
+        # print("computing V, may take some time....")
+        k, n1 = VT1.shape
+        l, n2 = VT2.shape
         r = len(S)
         # # print("k, n1 = ", k, n1)
         # # print("k, n2 = ", l, n2)
         # V1V2 = np.zeros((k+l, n1+n2))
-        # V1V2[:k, :n1] = V1.T
-        # V1V2[k:, n1:] = V2.T
-        # V = dot(VE.T, V1V2)
+        # V1V2[:k, :n1] = VT1
+        # V1V2[k:, n1:] = VT2
+        # V = matmul(VTE, V1V2)
         # rather sector wise:
-        V = np.empty((r, n1+n2))
-        V[:k, :n1] = dot(VE.T[:k, :k], V1.T)
-        V[k:, :n1] = dot(VE.T[k:, :k], V1.T)
-        V[:k, n1:] = dot(VE.T[:k, k:], V2.T)
-        V[k:, n1:] = dot(VE.T[k:, k:], V2.T)
-        return U, S, V.T
+        # if VTE[:k, k:].shape[1] !=  VT2.shape[0]:
+        #     print(VTE[:k, k:].shape, VT2.shape)
+        VT = np.empty((r, n1+n2))
+        VT[:k, :n1] = matmul(VTE[:k, :k], VT1)
+        VT[k:, :n1] = matmul(VTE[k:, :k], VT1)
+        VT[:k, n1:] = matmul(VTE[:k, k:], VT2)
+        VT[k:, n1:] = matmul(VTE[k:, k:], VT2)
+        return U, S, VT
     else:
         return U, S, None
 
-# def merge_horizontally3(U1, S1, V1, U2, S2, V2):
-#     # V may be none
-#     # eq 9 and eq 10
-#     # merging two bocks, [X1, X2] = [X]
-#     # print("1D?:", S1.shape, S2.shape)
-#     # k, l = S1.shape[0], S2.shape[0]
-#     m, k = U1.shape
-#     m, l = U2.shape
-#     # print("m, k = ", m, k)
-#     # print("m, l = ", m, l)
-#     # print("1D?: k, l = ", S1.shape, S2.shape)
 
-#     E = np.zeros((m, k+l))  # n, n
-#     E[:, :k] = U1*S1.reshape(1, k)
-#     E[:, k:] = U2*S2.reshape(1, l)
-#     U, S, VE = svd(E, full_matrices=False)
-#     if isinstance(V1, np.ndarray):
-#         # # print("computing V, may take some time....")
-#         # k, n1 = V1.T.shape
-#         # l, n2 = V2.T.shape
-#         # # print("k, n1 = ", k, n1)
-#         # # print("k, n2 = ", l, n2)
-#         # V1V2 = np.zeros((k+l, n1+n2))
-#         # V1V2[:k, :n1] = V1.T
-#         # V1V2[k:, n1:] = V2.T
-#         # V = dot(VE.T, V1V2)
-#         V = np.empty((k+l, k+l))
-#         V[:k, :k] = dot(VE.T[:k, :k], V1.T)
-#         V[k:, :k] = dot(VE.T[k:, :k], V1.T)
-#         V[:k, k:] = dot(VE.T[:k, k:], V2.T)
-#         V[k:, k:] = dot(VE.T[k:, k:], V2.T)
-#         return U, S, V.T
-#     else:
-#         return U, S
-
-def merge_vertically(U1, S1, V1, U2, S2, V2):
+def merge_vertically(U1, S1, VT1, U2, S2, VT2, eps):
     # U may be none
     # eq 9 and eq 10
     # merging two bocks, [X1, X2] = [X]
     # print("1D?:", S1.shape, S2.shape)
     # k, l = S1.shape[0], S2.shape[0]
-    k, n = V1.T.shape
-    l, n = V2.T.shape
+    k, n = VT1.shape
+    l, n = VT2.shape
     # print("k, n = ", k, n)
     # print("l, n = ", l, n)
 
@@ -376,10 +373,10 @@ def merge_vertically(U1, S1, V1, U2, S2, V2):
     # print("1D?: k, l = ", S1.shape, S2.shape)
 
     E = np.zeros((k+l, n))  # n, n
-    E[:k, :] = V1.T*S1.reshape(k, 1)
-    E[k:, :] = V2.T*S2.reshape(l, 1)
-    UE, S, V = svd(E, full_matrices=False)
-    if isinstance(U1, np.ndarray):
+    E[:k, :] = VT1*reshape(S1, (k, 1))
+    E[k:, :] = VT2*reshape(S2, (l, 1))
+    UE, S, VT = truncate_basis(*svd(E), eps=eps)
+    if isinstance(U1, np.ndarray) | isinstance(U1, tf.Tensor):
         # # print("computing U, may take some time....")
         m1, k = U1.shape
         m2, l = U2.shape
@@ -388,15 +385,15 @@ def merge_vertically(U1, S1, V1, U2, S2, V2):
         # U1U2 = np.zeros((m1+m2, k+l))
         # U1U2[:m1, :k] = U1
         # U1U2[m1:, k:] = U2
-        # U = dot(U1U2, UE)
+        # U = matmul(U1U2, UE)
         r = len(S)
         U = np.empty((m1+m2, r))
-        U[:m1] = dot(U1, UE[:k])
-        U[m1:] = dot(U2, UE[k:])
+        U[:m1] = matmul(U1, UE[:k])
+        U[m1:] = matmul(U2, UE[k:])
         # print(np.allclose(U, U22))
-        return U, S, V
+        return U, S, VT
     else:
-        return S, V
+        return None, S, VT
 
 
 class Data:
@@ -406,6 +403,7 @@ class Data:
         - splitting into train and test data
         -
     """
+
     def __init__(self, X, xi, x, y, tri, dims, phase_length=None):
         self.X = X  # snapshots
         self.xi = xi  # parameterspace
@@ -477,10 +475,9 @@ class POD(Data):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-
-    def svd(self, X):
-        S, U, V = tf.linalg.svd(X, full_matrices=False)
-        return U.numpy(), S.numpy(), V.numpy()
+    # def svd(self, X):
+    #     S, U, VT = tf.linalg.svd(X, full_matrices=False)
+    #     return U.numpy(), S.numpy(), V.numpy()
 
     def hierarchical_pod(self, eps):
         """
@@ -507,15 +504,15 @@ class POD(Data):
         # print([i.shape for i in U])
         # a1 = S
         # for i, _ in enumerate(U):
-            # a1 = np.tensordot(a1, U[i], (0, 1))
+        # a1 = np.tensordot(a1, U[i], (0, 1))
         # print(np.allclose(a, a1))
         # core_tensor = a
         left_singular_basis = []
         for k in range(a.ndim):
             unfold = np.reshape(np.moveaxis(a, k, 0), (a.shape[k], -1))
-            U, _, _ = np.linalg.svd(unfold, full_matrices=full_matrices)
+            U, _, _ = svd(unfold, full_matrices=full_matrices)
             left_singular_basis.append(U)
-            U_c = U.T.conj()
+            U_c = transpose(U).conj()
             a = np.tensordot(a, U_c, (0, 1))
         return left_singular_basis, a
 
@@ -567,15 +564,15 @@ class POD(Data):
             try:
                 U = np.load("U"+f_name)
                 S = np.load("S"+f_name)
-                V = np.load("V"+f_name)
+                VT = np.load("VT"+f_name)
                 # print("loaded: "+f_name)
             except:
-                U, S, V = self.svd(X)
+                U, S, VT = self.svd(X)
                 np.save("U"+f_name, U)
                 np.save("S"+f_name, S)
-                np.save("V"+f_name, V)
+                np.save("VT"+f_name, VT)
                 # print("saved: "+f_name)
-            S_hat, U_hat, V_hat = self.truncate_basis(S, U, V, eps1)
+            S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps1)
             e = s + U_hat.shape[1]
             U_hats[:, s:e] = U_hat
             # print(i, X.shape, U.shape, U_hat.shape)
@@ -588,21 +585,21 @@ class POD(Data):
         # self = my_POD
         # U_hats = self.U_hats
         # U_hat = self.U_hat
-        # S, U, V = self.S, self.U, self.V
-        # S_hat, U_hat, V_hat = self.S_hat, self.U_hat, self.V_hat
+        # S, U, VT = self.S, self.U, self.VT
+        # S_hat, U_hat, VT_hat = self.S_hat, self.U_hat, self.VT_hat
         # print(U_hats.shape)
 
-        U, S, V = self.svd(U_hats)
-        S_hat, U_hat, V_hat = self.truncate_basis(S, U, V, eps2)
+        U, S, VT = self.svd(U_hats)
+        S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps2)
         # print(S.shape, S_hat.shape)
         # print(U.shape, U_hat.shape)
-        # print(V.shape, V_hat.shape)
+        # print(VT.shape, VT_hat.shape)
 
-        X_n_approx = np.dot(U_hat, np.dot(U_hat.T, self.X_n))
+        X_n_approx = matmul(U_hat, matmul(transpose(U_hat), self.X_n))
         error = np.std(self.X_n-X_n_approx)
 
-        # self.S, self.U, self.V = S, U, V
-        # self.S_hat, self.U_hat, self.V_hat = S_hat, U_hat, V_hat
+        # self.S, self.U, self.VT = S, U, VT
+        # self.S_hat, self.U_hat, self.VT_hat = S_hat, U_hat, VT_hat
         # self.X_n_approx = X_n_approx
 
         # print(error)
@@ -623,15 +620,15 @@ class POD(Data):
         # plt.show()
         return error
 
-    def truncate_basis(self, S, U, V, eps):
+    def truncate_basis(self, S, U, VT, eps):
         """
         reduce rank of basis to low rank r
         """
         cum_en = np.cumsum(S)/np.sum(S)
-        r = np.sum(cum_en<eps)
+        r = np.sum(cum_en < eps)
         U_hat = U[:, :r]  # (n, r)
         S_hat = S[:r]  # (r, r) / (r,) wo  non zero elements
-        V_hat = V[:, :r]  # (d1, r)
+        VT_hat = VT[:r, :]  # (r, d1)
 
         self.cum_en = cum_en
         # n = len(S)
@@ -657,7 +654,7 @@ class POD(Data):
         # # axs[1].set_ylim([0, 100])
         # plt.tight_layout()
         # plt.show()
-        return S_hat, U_hat, V_hat
+        return S_hat, U_hat, VT_hat
 
     def to_reduced_space(self):
         return
@@ -666,88 +663,149 @@ class POD(Data):
         return
 
     # predict
-    def predict(S, U, V, r):
-        S_hat = S.numpy()[:r]  # (r, r) / (r,) wo  non zero elements
-        U_hat = U.numpy()[:, :r]  # (n, r)
-        V_hat = V[:, :r]  # (d1, r)
-        X_approx = np.dot(U_hat*S_hat, V_hat.T)  # n, d1
+    def predict(S, U, VT, r):
+        # S_hat = S.numpy()[:r]  # (r, r) / (r,) wo  non zero elements
+        # U_hat = U.numpy()[:, :r]  # (n, r)
+        # VT_hat = VT[:, :r]  # (d1, r)
+        X_approx = matmul(U*S, VT)  # n, d1
         return X_approx
 
+
 def test_merge(N):
+    eps = 1.0
     assert N > 4
     # N = 300
     X = np.random.rand(N, N)
-    U_, S_, V_ = svd(X, False)
-
+    U_, S_, VT_ = svd(X, False)
 
     m1, n1 = np.random.randint(1, N-1), np.random.randint(1, N-1)
     print("split vertically: X = [[X1], [X2]]....", end=" ")
-    U1, S1, V1 = svd(X[:m1, :], False)
-    U2, S2, V2 = svd(X[m1:, :], False)
-    # print(U1.shape, S1.shape, V1.T.shape)
-    # print(U2.shape, S2.shape, V2.T.shape)
+    U1, S1, VT1 = svd(X[:m1, :], False)
+    U2, S2, VT2 = svd(X[m1:, :], False)
+    # print(U1.shape, S1.shape, VT1.shape)
+    # print(U2.shape, S2.shape, VT2.shape)
 
-    U, S, V = merge_vertically(U1, S1, V1, U2, S2, V2)
+    U, S, VT = merge_vertically(U1, S1, VT1, U2, S2, VT2, eps)
     # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
     # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
-    # print(X/np.dot(U*S, V.T))
-    assert np.allclose(np.abs(U/U_), 1), "merge_vertically faied, U differs."  # 59, 41
-    assert np.allclose(S, S_, atol=1e-5, rtol=1e-5), "merge_vertically faied, S differs."
-    assert np.allclose(np.abs(V/V_), 1), "merge_vertically faied, V differs."
+    # print(VT.shape, VT_.shape, np.allclose(np.abs(VT/VT_), 1))
+    # print(X/matmul(U*S, VT))
+    assert np.allclose(
+        np.abs(U/U_), 1), "merge_vertically faied, U differs."  # 59, 41
+    assert np.allclose(
+        S, S_, atol=1e-5, rtol=1e-5), "merge_vertically faied, S differs."
+    assert np.allclose(
+        np.abs(VT/VT_), 1), "merge_vertically faied, VT differs."
     print("O.K.")
 
     print("split horizontally: X = [X1, X2]....", end=" ")
-    U1, S1, V1 = svd(X[:, :n1], False)
-    U2, S2, V2 = svd(X[:, n1:], False)
-    # print(U1.shape, S1.shape, V1.T.shape)
-    # print(U2.shape, S2.shape, V2.T.shape)
+    U1, S1, VT1 = svd(X[:, :n1], False)
+    U2, S2, VT2 = svd(X[:, n1:], False)
+    # print(U1.shape, S1.shape, VT1.shape)
+    # print(U2.shape, S2.shape, VT2.shape)
 
-    U, S, V = merge_horizontally(U1, S1, V1, U2, S2, V2)
+    U, S, VT = merge_horizontally(U1, S1, VT1, U2, S2, VT2)
     # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
     # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    # print(VT.shape, VT_.shape, np.allclose(np.abs(VT/VT_), 1))
     assert np.allclose(np.abs(U/U_), 1), "merge_horizontally faied, U differs."
-    assert np.allclose(S, S_, atol=1e-5, rtol=1e-5), "merge_horizontally faied, S differs."
-    assert np.allclose(np.abs(V/V_), 1), "merge_horizontally faied, V differs."
+    assert np.allclose(
+        S, S_, atol=1e-5, rtol=1e-5), "merge_horizontally faied, S differs."
+    assert np.allclose(
+        np.abs(VT/VT_), 1), "merge_horizontally faied, VT differs."
 
-    U, S, V = merge_horizontally2(U1, S1, V1, U2, S2, V2)
+    U, S, VT = merge_horizontally2(U1, S1, VT1, U2, S2, VT2, eps)
     # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
     # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
-    assert np.allclose(np.abs(U/U_), 1), "merge_horizontally2 faied, U differs."
-    assert np.allclose(S, S_, atol=1e-5, rtol=1e-5), "merge_horizontally2 faied, S differs."
-    assert np.allclose(np.abs(V/V_), 1), "merge_horizontally2 faied, V differs."
+    # print(VT.shape, VT_.shape, np.allclose(np.abs(VT/VT_), 1))
+    assert np.allclose(
+        np.abs(U/U_), 1), "merge_horizontally2 faied, U differs."
+    assert np.allclose(
+        S, S_, atol=1e-5, rtol=1e-5), "merge_horizontally2 faied, S differs."
+    assert np.allclose(
+        np.abs(VT/VT_), 1), "merge_horizontally2 faied, VT differs."
     print("O.K.")
 
 
 if __name__ == "__main__":
-    if "X_all" not in locals():
+    if "my_data" not in locals():
         path = "C:/Users/florianma/Documents/data/freezing_cavity/"
-        X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots_cavity(path)
-    X = X_all[:5000, :5000]
+        # X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots_cavity(path)
+        my_data = Data(*load_snapshots_cavity(path))
+    X = my_data.X_n[:, :]
     # X_all = np.random.rand(2000, 2000)
 
+    eps = .999
 
-    t0 = timeit.default_timer()
-    U1, S1, V1 = svd(X, False)
-    t1 = timeit.default_timer()
-    for n in [2, 4, 8, 16, 32]:
-        t2 = timeit.default_timer()
-        U2, S2, V2 = row_svd(X, n, .999, True)
-        t3 = timeit.default_timer()
-        U3, S3, V3 = row_svd(X, n, .999, False)
-        t4 = timeit.default_timer()
-        print("SVD1: ", t1-t0)
-        print("SVD2: ", t3-t1)
-        print("SVD3: ", t4-t3)
-        print(np.allclose(X, np.dot(U1*S1, V1.T)))
-        print(np.allclose(X, np.dot(U2*S2, V2.T)))
-        print(np.allclose(X, np.dot(U3*S3, V3.T)))
+    if X.shape[1] < 3000:
+        t0 = timeit.default_timer()
+        U1, S1, VT1 = truncate_basis(*svd(X), eps)
+        t1 = timeit.default_timer()
+        X_approx = matmul(U1, matmul(transpose(U1), X))
+        error1 = np.std(X-X_approx)
+        print("SVD1: ", t1-t0, error1, U1.shape[1])
+        print("-----------------------")
+    # print(np.allclose(X, matmul(U1*S1, VT1)))
+    # if True:
+    #     n = 8
+    for n in 2**np.arange(6, 10):
+        if (X.shape[1] / n < 3000) and (X.shape[1] / n > 100):
+            print(n)
+            # n = 64
+            # print(n)
+            t2 = timeit.default_timer()
+            U2, S2, VT2 = row_svd(X, n, eps, ommit_V=True,
+                                  merger=merge_horizontally)
+            t3 = timeit.default_timer()
+            X_approx = matmul(U2, matmul(transpose(U2), X))
+            error2 = np.std(X-X_approx)
+            print("SVD2: ", t3-t2, error2)
+            print("-----------------------")
+
+            t3 = timeit.default_timer()
+            U3, S3, VT3 = row_svd(X, n, eps, ommit_V=True,
+                                  merger=merge_horizontally2)
+            t4 = timeit.default_timer()
+            X_approx = matmul(U3, matmul(transpose(U3), X))
+            error3 = np.std(X-X_approx)
+            print("SVD3: ", t4-t3, error3)
+            print("-----------------------")
+
+            t2 = timeit.default_timer()
+            U2, S2, VT2 = row_svd(X, n, eps, ommit_V=False,
+                                  merger=merge_horizontally)
+            t3 = timeit.default_timer()
+            X_approx = matmul(U2, matmul(transpose(U2), X))
+            error2 = np.std(X-X_approx)
+            print("SVD4: ", t3-t2, error2)
+            print("-----------------------")
+
+            t3 = timeit.default_timer()
+            U3, S3, VT3 = row_svd(X, n, eps, ommit_V=False,
+                                  merger=merge_horizontally2)
+            t4 = timeit.default_timer()
+            X_approx = matmul(U3, matmul(transpose(U3), X))
+            error3 = np.std(X-X_approx)
+            print("SVD5: ", t4-t3, error3)
+            print("-----------------------")
+            print("-----------------------")
+            print("-----------------------")
+
+            # t41 = timeit.default_timer()
+            # X_approx = matmul(U2, matmul(transpose(U2), X))
+            # t42 = timeit.default_timer()
+            # X_approx = matmul(matmul(U2, transpose(U2)), X)
+            # t43 = timeit.default_timer()
+            # print(t42-t41)
+            # print(t43-t42)
+
+            # print("-----------------------")
+            # print(np.allclose(X, matmul(U2*S2, VT2)))
+            # print(np.allclose(X, matmul(U3*S3, VT3)))
 
     # print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
     # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-    # print(V.shape, V_.shape, np.allclose(np.abs(V/V_), 1))
+    # print(VT.shape, VT_.shape, np.allclose(np.abs(VT/VT_), 1))
 
     asd
     for N in [100, 250, 500, 1000]:
@@ -756,52 +814,48 @@ if __name__ == "__main__":
         m1, n1 = M//2, N//2
         X = X_all[:M, :N]
         t0 = timeit.default_timer()
-        U_, S_, V_ = svd(X, False)
+        U_, S_, VT_ = svd(X, False)
         t1 = timeit.default_timer()
         # X = np.random.rand(1000, 1000)
-        U_, S_, V_ = svd(X, False)
+        U_, S_, VT_ = svd(X, False)
         # print("split vertically: X = [[X1], [X2]]", M, N)
         # t2 = timeit.default_timer()
         # try:
-        #     U1, S1, V1 = svd(X[:m1, :], False)
+        #     U1, S1, VT1 = svd(X[:m1, :], False)
         # except:
-        #     U1, S1, V1 = timed_svd_truncated(X[:m1, :], False)
-        # U2, S2, V2 = svd(X[m1:, :], False)
+        #     U1, S1, VT1 = timed_svd_truncated(X[:m1, :], False)
+        # U2, S2, VT2 = svd(X[m1:, :], False)
         # t3 = timeit.default_timer()
         # print(t1-t0)
         # print(t3-t2)
 
         # t1 = timeit.default_timer()
-        # U, S, V = merge_vertically(U1, S1, V1, U2, S2, V2)
+        # U, S, VT = merge_vertically(U1, S1, VT1, U2, S2, VT2, eps)
         # t2 = timeit.default_timer()
-        # print(np.allclose(X, np.dot(U*S, V.T)))
-
-
-
+        # print(np.allclose(X, matmul(U*S, V)))
 
         print("split horizontally: X = [X1, X2]")
-        U1, S1, V1 = svd(X[:, :n1], False)
-        U2, S2, V2 = svd(X[:, n1:], False)
-
+        U1, S1, VT1 = svd(X[:, :n1], False)
+        U2, S2, VT2 = svd(X[:, n1:], False)
 
         t3 = timeit.default_timer()
-        # U, S, V = merge_horizontally(U1, S1, V1, U2, S2, V2)
+        # U, S, VT = merge_horizontally(U1, S1, VT1, U2, S2, VT2, eps)
         t4 = timeit.default_timer()
-        # print(np.allclose(X, np.dot(U*S, V.T)))
+        # print(np.allclose(X, matmul(U*S, VT)))
         t5 = timeit.default_timer()
-        U, S, V = merge_horizontally2(U1, S1, V1, U2, S2, V2)
+        U, S, VT = merge_horizontally2(U1, S1, VT1, U2, S2, VT2, eps)
         t6 = timeit.default_timer()
-        U, S = merge_horizontally2(U1, S1, None, U2, S2, None)
+        U, S = merge_horizontally2(U1, S1, None, U2, S2, None, eps)
         t62 = timeit.default_timer()
         print(t6-t5)
         print(t62-t5)
-        print(np.allclose(X, np.dot(U*S, V.T)))
+        print(np.allclose(X, matmul(U*S, VT)))
 
-        # merge_blocks(l_U, l_S)
+        # merge_blocks(l_U, l_S, eps)
         t7 = timeit.default_timer()
-        U, S = merge_row([U1, U2], [S1, S2])
+        U, S = merge_row([U1, U2], [S1, S2], ommit_V=False, eps=eps)
         t8 = timeit.default_timer()
-        print(np.allclose(X, np.dot(U*S, V.T)))
+        print(np.allclose(X, matmul(U*S, VT)))
         print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
         print(U.shape, U_.shape, np.allclose(np.abs(U), np.abs(U_)))
         # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
@@ -813,25 +867,22 @@ if __name__ == "__main__":
         print()
         print()
 
-
-
-
     # X[:500, :400] = 0; X  # 1, 1
     # X[500:, :300] = 0; X  # 2, 1
     # X[:500, -200:] = 0; X  # 1, 2
     # X[500:, -100:] = 0; X  # 2, 2
     # d, c = 2, 2
     # tic = timeit.default_timer()
-    # U, S, V = hierarchical_svd(X, d, c, .9999)
+    # U, S, VT = hierarchical_svd(X, d, c, .9999)
     # toc = timeit.default_timer()
     # print("hierarchical svd X (shape ", X.shape, ") took {:.1f} seconds.".format(toc-tic))
-    # U, S, V = svd(X, full_matrices=False)
+    # U, S, VT = svd(X, full_matrices=False)
     # np.linalg.svd()
     # X = np.random.rand(2000, 2000)
     # # for n in range(100, 2000, 100):
-    # #     dot(X[:, :n], X[:n, :])
-    # #     dot(X[:n, :], X[:, :n])
-    # #     dot(X[:n, :n], X[:n, :n])
+    # #     matmul(X[:, :n], X[:n, :])
+    # #     matmul(X[:n, :], X[:, :n])
+    # #     matmul(X[:n, :n], X[:n, :n])
     # # # for n in range(100, 1000, 25):
     # for n in range(100, 2000, 100):
     #     svd(X[:n, :], False)
@@ -842,11 +893,7 @@ if __name__ == "__main__":
     #     timed_svd2(X[:, :n], False)
     #     timed_svd2(X[:n, :n], False)
 
-
-
-
-
-    # # S, U, V = tf.linalg.svd(X_all, full_matrices=False)
+    # # S, U, VT = tf.linalg.svd(X_all, full_matrices=False)
     # my_POD = POD(X_all, _xi_all_, x, y, tri, dims_all)
     # for eps in np.linspace(0.8, 1.0, 21):
     #     if eps == 1.0:
