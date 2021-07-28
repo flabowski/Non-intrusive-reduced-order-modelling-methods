@@ -5,25 +5,27 @@ Created on Mon May  3 13:30:48 2021
 
 @author: florianma
 """
-import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import sys, os
 from os.path import isfile, join
-import pickle
 import tensorflow as tf
 from scipy.interpolate import Rbf
 import timeit
-from scipy.optimize import curve_fit
 from scipy.interpolate import griddata
-# import seaborn as sns
-# import pandas as pd
-# from mayavi import mlab
 np.set_printoptions(suppress=True)
 plot_width = 16
+print()
+print(sys.path)
+# print(np.__file__)
 sys.path.append('/home/fenics/shared/')
 from ROM.snapshot_manager import get_snapshot_matrix, Data
 from ROM.plotting import plot_snapshot_cav
+print()
+print(sys.path)
+import sys
+sys.path
+asd
 
 
 class ROM():
@@ -60,6 +62,10 @@ class ROM():
         self.S = S.numpy()
         self.U = U.numpy()
         self.V = V.numpy()
+        # Psi_s = V.numpy() 
+        # for i in range(10):
+        #     for j in range(10):
+        #         print(i, j, "{:.6f}".format(np.sum(Psi_s[:, j] * Psi_s[:, i])))
         return
 
     def interpolateV(self, xi, method):
