@@ -1,0 +1,3 @@
+FROM quay.io/fenicsproject/dev
+RUN pip install --upgrade jupyter_contrib_nbextensions jupyter_nbextensions_configurator
+RUN jupyter notebook --generate-config && jupyter contrib nbextension install --system && jupyter nbextensions_configurator enable --system && echo "c.NotebookApp.ip = '0.0.0.0'\n" >> /root/.jupyter/jupyter_notebook_config.py && echo "c.NotebookApp.allow_root = True\n" >> /root/.jupyter/jupyter_notebook_config.py
