@@ -21,13 +21,15 @@ x2_train = np.load("C:/Users/florianma/Documents/data/testRBF/x2_train.npy")
 V0 = np.load("C:/Users/florianma/Documents/data/testRBF/V0.npy")
 V1 = np.load("C:/Users/florianma/Documents/data/testRBF/V1.npy")
 V2 = np.load("C:/Users/florianma/Documents/data/testRBF/V2.npy")
-V0[V0<1e-6] = 0
-V1[V1<1e-6] = 0
-V2[V2<1e-6] = 0
+V0[V0 < 1e-6] = 0
+V1[V1 < 1e-6] = 0
+V2[V2 < 1e-6] = 0
 V = [V0, V1, V2]
 # d = np.load("C:/Users/florianma/Documents/data/testRBF/d_train.npy")
-x1_validation = np.load("C:/Users/florianma/Documents/data/testRBF/x1_validation.npy")
-x2_validation = np.load("C:/Users/florianma/Documents/data/testRBF/x2_validation.npy")
+x1_validation = np.load(
+    "C:/Users/florianma/Documents/data/testRBF/x1_validation.npy")
+x2_validation = np.load(
+    "C:/Users/florianma/Documents/data/testRBF/x2_validation.npy")
 
 # V[0][250, 0 ] = 1
 # V[1][250, 0 ] = 1
@@ -63,24 +65,18 @@ for j in range(3):
             print(V_interpolated[j][0, k], V[j][250, k])
             for s in range(15):
                 print(np.where(V_interpolated[j][s, k]-V[j][:, k] == 0))
-            print(np.allclose(V_interpolated[j][0, k], V[j][250, k], atol=1e-6))
+            print(np.allclose(V_interpolated[j]
+                  [0, k], V[j][250, k], atol=1e-6))
 fig, ax = plt.subplots()
-plt.scatter(x1_train, x2_train, s=15, c=d, vmin=.022423928378509626, vmax=0.02599471815644643)
+plt.scatter(x1_train, x2_train, s=15, c=d,
+            vmin=.022423928378509626, vmax=0.02599471815644643)
 # plt.scatter(x1_train, x2_train, s=15, c=d)
-plt.scatter(x1_validation*0+0.0011, x2_validation, s=15, c=di, vmin=.022423928378509626, vmax=0.02599471815644643)
+plt.scatter(x1_validation*0+0.0011, x2_validation, s=15, c=di,
+            vmin=.022423928378509626, vmax=0.02599471815644643)
 V_interpolated[j][0, :]
 V[j][300, :n_modes]
 
-asd
-
-
-
-
-
-
-
-
-
+# asd
 
 
 fig, ax = plt.subplots(figsize=(plot_width/2.54, 8/2.54))

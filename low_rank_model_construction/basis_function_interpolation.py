@@ -29,19 +29,6 @@ elif LINALG_LIB == "numpy":
     reshape = np.reshape
     inv = np.linalg.inv
 
-# [[4, 3015], [5000, 10]]
-f_name = "50kSVD.npy"
-U = np.load("U"+f_name)
-S = np.load("S"+f_name)
-VT = np.load("VT"+f_name)
-points = np.load("xi.npy")
-VT.shape = (-1, 5000, 10)
-points.shape = (5000, 10, 2)
-x1 = points[:, 0, 0]
-x2 = points[0, :, 1]
-
-values = VT[0, :, :]
-
 
 def interpolateV(points, values, xi):
     """
@@ -106,6 +93,46 @@ def interpolateV(points, values, xi):
 
 
 class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
+    """
+    Interpolation on a regular grid in arbitrary dimensions (c.f. scipy, RegularGridInterpolator)
+
+    The data must be defined on a regular grid; the grid spacing however may be
+    uneven. Linear and nearest-neighbor interpolation are supported. Currently,
+    only quadratic basis functions are supported
+
+    Parameters
+    ----------
+    points : tuple of ndarray of float, with shapes (m1, ), ..., (mn, )
+        The points defining the regular grid in n dimensions.
+
+    values : array_like, shape (m1, ..., mn, ...)
+        The data on the regular grid in n dimensions.
+
+    bounds_error : bool, optional
+        If True, when interpolated values are requested outside of the
+        domain of the input data, a ValueError is raised.
+        If False, then `fill_value` is used.
+
+    fill_value : number, optional
+        If provided, the value to use for points outside of the
+        interpolation domain. If None, values outside
+        the domain are extrapolated.
+
+    Methods
+    -------
+    __call__
+
+    Notes
+    -----
+    Contrary to LinearNDInterpolator and NearestNDInterpolator, this class
+    avoids expensive triangulation of the input data by taking advantage of the
+    regular grid structure.
+
+    If any of `points` have a dimension of size 1, linear interpolation will
+    return an array of `nan` values. Nearest-neighbor interpolation will work
+    as usual in this case.
+    """
+
     def __init__(self, points, values, bounds_error=True, fill_value=np.nan):
         RegularGridInterpolator.__init__(self, points, values, method="linear",
                                          bounds_error=bounds_error, fill_value=fill_value)
@@ -115,45 +142,6 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
         self.ind_grd = [None for d in range(ndim)]
         for d in range(ndim):
             self.Phi[d], self.ind_grd[d] = self._BF_coeff_along(self.grid[d])
-        # if method not in ["linear", "nearest"]:
-        #     raise ValueError("Method '%s' is not defined" % method)
-        # self.method = method
-        # self.bounds_error = bounds_error
-
-        # if not hasattr(values, 'ndim'):
-        #     # allow reasonable duck-typed values
-        #     values = np.asarray(values)
-
-        # if len(points) > values.ndim:
-        #     raise ValueError("There are %d point arrays, but values has %d "
-        #                      "dimensions" % (len(points), values.ndim))
-
-        # if hasattr(values, 'dtype') and hasattr(values, 'astype'):
-        #     if not np.issubdtype(values.dtype, np.inexact):
-        #         values = values.astype(float)
-
-        # self.fill_value = fill_value
-        # if fill_value is not None:
-        #     fill_value_dtype = np.asarray(fill_value).dtype
-        #     if (hasattr(values, 'dtype') and not
-        #             np.can_cast(fill_value_dtype, values.dtype,
-        #                         casting='same_kind')):
-        #         raise ValueError("fill_value must be either 'None' or "
-        #                          "of a type compatible with values")
-
-        # for i, p in enumerate(points):
-        #     print(i, p.shape, values.shape)
-        #     if not np.all(np.diff(p) > 0.):
-        #         raise ValueError("The points in dimension %d must be strictly "
-        #                          "ascending" % i)
-        #     if not np.asarray(p).ndim == 1:
-        #         raise ValueError("The points in dimension %d must be "
-        #                          "1-dimensional" % i)
-        #     if not values.shape[i] == len(p):
-        #         raise ValueError("There are %d points and %d values in "
-        #                          "dimension %d" % (len(p), values.shape[i], i))
-        # self.grid = tuple([np.asarray(p) for p in points])
-        # self.values = values
 
     def __call__(self, xi, method=None):
         """
@@ -170,26 +158,22 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
 
         """
         method = self.method if method is None else method
-        if method not in ["quadratic"]:
-            raise ValueError("Method '%s' is not defined" % method)
-
+        # if method not in ["quadratic"]:
+        #     raise ValueError("Method '%s' is not defined" % method)
         ndim = len(self.grid)
         # xi = _ndim_coords_from_arrays(xi, ndim=ndim)
         if xi.shape[-1] != len(self.grid):
             raise ValueError("The requested sample points xi have dimension "
                              "%d, but this RegularGridInterpolator has "
                              "dimension %d" % (xi.shape[1], ndim))
-
         xi_shape = xi.shape
         xi = xi.reshape(-1, xi_shape[-1])
-
         if self.bounds_error:
             for i, p in enumerate(xi.T):
                 if not np.logical_and(np.all(self.grid[i][0] <= p),
                                       np.all(p <= self.grid[i][-1])):
-                    raise ValueError("One of the requested xi is out of bounds "
-                                     "in dimension %d" % i)
-
+                    raise ValueError("One of the requested xi is out of bounds"
+                                     " in dimension %d" % i)
         indices, norm_distances, out_of_bounds = self._find_indices(xi.T)
         result = self._evaluate_quadratic(indices, xi, out_of_bounds)
         if not self.bounds_error and self.fill_value is not None:
@@ -223,7 +207,7 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
         # note: if the number of points is even, an additional rectangle is added
         # using the points n, n-1, and n-2, even though n-1 and n-2 are used for
         # the second last rectangle too
-        print(xi)
+        # print(xi)
         n_elements = self._ind_element(ind_pt=len(xi))
         Phi_i = np.zeros((n_elements, 3, 3))
         ind_grd = np.zeros((n_elements), dtype=np.int64)
@@ -235,7 +219,7 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
             else:
                 p = xi[i:i+3]
                 ind_grd[ind_element] = i
-            print(p)
+            # print(p)
             Phi_i[ind_element, 0] = self.quadratic_coeff(p, 0)
             Phi_i[ind_element, 1] = self.quadratic_coeff(p, 1)
             Phi_i[ind_element, 2] = self.quadratic_coeff(p, 2)
@@ -302,49 +286,69 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
         return result
 
 
-n1, n2, n3 = 8, 5, 7
-x1 = np.linspace(0, 8, n1)
-x2 = np.linspace(100, 500, n2)
-x3 = np.linspace(10, 16, n3)
-grid = (x1, x2, x3)
-xx, yy, zz = np.meshgrid(*grid, indexing="ij")
-f = np.random.rand(*xx.shape)
-print(f.shape)
+if __name__ == "__main__":
 
-n = 4
-n1_f = (n1-1)*n+1
-n2_f = (n2-1)*n+1
-n3_f = (n2-1)*n+1
-x1_f = np.linspace(0, 8, n1_f)
-x2_f = np.linspace(100, 500, n2_f)
-x3_f = np.linspace(10, 16, n3_f)
-xx_f, yy_f, zz_f = np.meshgrid(x1_f, x2_f, x3_f, indexing="ij")
-xi_new = np.array([xx_f.ravel(), yy_f.ravel(), zz_f.ravel()]).T  # 3, 495000
+    # [[4, 3015], [5000, 10]]
+    f_name = "50kSVD.npy"
+    U = np.load("U"+f_name)
+    S = np.load("S"+f_name)
+    VT = np.load("VT"+f_name)
+    points = np.load("xi.npy")
+    # 5240 modes corresponding to a parameterspace shaped (5000, 10)
+    VT.shape = (-1, 5000, 10)
+    points.shape = (5000, 10, 2)
+    x1 = points[:, 0, 0]
+    x2 = points[0, :, 1]
 
-rgi = BasisFunctionRegularGridInterpolator((x1, x2, x3), values=f)
+    values = VT[0, :, :]
+    # interpolateV(points, values, xi)
 
-f_interpolated = rgi(xi_new)
-f_interpolated.shape = (n1_f, n2_f, n3_f)
-# f_interpolated2 = np.transpose(f_interpolated2, (1,0,2))
-# print(f_interpolated2.shape)
+    n1, n2, n3 = 8, 5, 7
+    x1 = np.linspace(0, 8, n1)
+    x2 = np.linspace(100, 500, n2)
+    x3 = np.linspace(10, 16, n3)
+    grid = (x1, x2, x3)
+    xx, yy, zz = np.meshgrid(*grid, indexing="ij")
+    f = np.random.rand(*xx.shape)
+    print(f.shape)
 
-fig, ax = plt.subplots()
-plt.plot(x1, f[:, 0, 0], "go")
-plt.plot(x1_f, f_interpolated[:, 0, 0], "r.")
-# plt.plot(x1_f, f_interpolated2[:, 0, 0], "b.")
-plt.show()
+    n = 4
+    n1_f = (n1-1)*n+1
+    n2_f = (n2-1)*n+1
+    n3_f = (n2-1)*n+1
+    x1_f = np.linspace(0, 8, n1_f)
+    x2_f = np.linspace(100, 500, n2_f)
+    x3_f = np.linspace(10, 16, n3_f)
+    xx_f, yy_f, zz_f = np.meshgrid(x1_f, x2_f, x3_f, indexing="ij")
+    xi_new = np.array([xx_f.ravel(), yy_f.ravel(),
+                      zz_f.ravel()]).T  # 3, 495000
 
-fig, ax = plt.subplots()
-plt.plot(x2, f[0, :, 0], "go")
-plt.plot(x2_f, f_interpolated[0, :, 0], "r.")
-# plt.plot(x2_f, f_interpolated2[0, :, 0], "b.")
-plt.show()
+    rgi = BasisFunctionRegularGridInterpolator((x1, x2, x3), values=f)
 
-fig, ax = plt.subplots()
-plt.plot(x3, f[0, 0, :], "go")
-plt.plot(x3_f, f_interpolated[0, 0, :], "r.")
-# plt.plot(x3_f, f_interpolated2[0, 0, :], "b.")
-plt.show()
+    f_interpolated = rgi(xi_new)
+    f_interpolated.shape = (n1_f, n2_f, n3_f)
+    # f_interpolated2 = np.transpose(f_interpolated2, (1,0,2))
+    # print(f_interpolated2.shape)
+
+    fig, ax = plt.subplots()
+    plt.plot(x1, f[:, 0, 0], "go")
+    plt.plot(x1_f, f_interpolated[:, 0, 0], "r.")
+    # plt.plot(x1_f, f_interpolated2[:, 0, 0], "b.")
+    plt.show()
+
+    fig, ax = plt.subplots()
+    plt.plot(x2, f[0, :, 0], "go")
+    plt.plot(x2_f, f_interpolated[0, :, 0], "r.")
+    # plt.plot(x2_f, f_interpolated2[0, :, 0], "b.")
+    plt.show()
+
+    fig, ax = plt.subplots()
+    plt.plot(x3, f[0, 0, :], "go")
+    plt.plot(x3_f, f_interpolated[0, 0, :], "r.")
+    # plt.plot(x3_f, f_interpolated2[0, 0, :], "b.")
+    plt.show()
+
+
 # https://docs.scipy.org/doc/scipy/reference/tutorial/interpolate.html
 # https://docs.scipy.org/doc/scipy/reference/interpolate.html
 
