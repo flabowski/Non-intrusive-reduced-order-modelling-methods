@@ -105,19 +105,37 @@ def my_square_scatter(axes, x_array, y_array, w, h, **kwargs):
     return True
 
 
-for mode in range(20):
+
+P_train_n.shape = (100, 10, 2)
+xi_val = P_train_n[:, test_set, :].copy().reshape(100, 2)
+time = P_train_n[:, ~test_set, 0][:, 0].copy()
+x2 = P_train_n[:, ~test_set, 1][0, :].copy()
+grid = (time, x2)
+xy = P_train_n[:, ~test_set, :].copy().reshape(-1, 2)
+x = P_train_n[:, ~test_set, 0].copy().ravel()
+y = P_train_n[:, ~test_set, 1].copy().ravel()
+
+method1 = "linear"  # "cubic", "nearest"
+function = "cubic"
+labels = ["original (p = {:.2f})".format(xi_val[0, 1]),
+          'RBF interpolation - ' + function,
+          'BF interpolation - ' + "quadratic",
+          'regular grid interpolation - '+method1,
+          'CloughTocher2DInterpolator',
+          'svd linear',
+          'svd cubic '
+          ]
+
+n_modes = V.shape[1]
+errors = np.zeros((n_modes, 7))
+for mode in range(n_modes):
+    print(mode)
     Values = V[:, mode].copy()
-    P_train_n.shape = (100, 10, 2)
     Values.shape = (100, 10)
 
-    V_orig = Values[:, test_set].copy().ravel()
-    xi_val = P_train_n[:, test_set, :].copy().reshape(100, 2)
 
     # z = P_train_n[:, ~test_set, 2].copy().ravel()
 
-
-    method1 = "linear"  # "cubic", "nearest"
-    function = "cubic"
     # 'multiquadric': sqrt((r/self.epsilon)**2 + 1)
     # 'inverse': 1.0/sqrt((r/self.epsilon)**2 + 1)
     # 'gaussian': exp(-(r/self.epsilon)**2)
@@ -128,12 +146,7 @@ for mode in range(20):
 
 # * # * # * # * # * # * # * # * # * # * # * # * # * # * # * # * # * # * # * # *
     t0 = timeit.default_timer()
-    time = P_train_n[:, ~test_set, 0][:, 0].copy()
-    x2 = P_train_n[:, ~test_set, 1][0, :].copy()
-    grid = (time, x2)
-    xy = P_train_n[:, ~test_set, :].copy().reshape(-1, 2)
-    x = P_train_n[:, ~test_set, 0].copy().ravel()
-    y = P_train_n[:, ~test_set, 1].copy().ravel()
+    V_orig = Values[:, test_set].copy().ravel()
     vals = Values[:, ~test_set].copy()
 
     t0 = timeit.default_timer()
@@ -163,100 +176,111 @@ for mode in range(20):
 
 
 
-
-
-    labels = ["original (p = {:.2f})".format(xi_val[0, 1]),
-              'RBF interpolation - ' + function,
-              'BF interpolation - ' + "quadratic",
-              'regular grid interpolation - '+method1,
-              'CloughTocher2DInterpolator',
-              'svd linear',
-              'svd cubic '
-              ]
-    data = []
-    for i, interpolator in enumerate([rbfi, bf_rgi, rgi, cti, dmd_lin, dmd_cub]):
+    data = [V_orig]  # so data fits labels
+    for i, interpolator in enumerate([rbfi, bf_rgi, rgi, cti, dmd_lin, dmd_cub], 1):
         t0 = timeit.default_timer()
-        if i < 4:
+        if i < 5:
             data[i:i] = [interpolator(xi_val[:, :2])]
         else:
             data[i:i] = [interpolator(xi_val[0, 1]).ravel()]
-        print(labels[i+1], timeit.default_timer()-t0)
-    data[0:0] = [V_orig]
+        e = V_orig-data[i]
+        errors[mode, i] = np.sum(e**2)**.5
+        print(labels[i], timeit.default_timer()-t0)
 
-    # plot interpolation of test data and error
-    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True,
-                                   figsize=(plot_width/2.54, plot_width/2.54))
-    for d, lbl in zip(data, labels):
-        e = V_orig-d
-        lbl +="\n(error: {:.4f})".format(np.sum(e**2)**.5)
-        ax1.plot(xi_val[:, 0], d,# color=cmap(to_be_inetpolated/9),
-                 # marker="", linestyle="dashdot",
-                 label=lbl)  # , zorder=18)
-        ax2.plot(xi_val[:, 0], e,# color=cmap(to_be_inetpolated/9),
-                 # marker="", linestyle="dashdot",
-                 label=lbl)  # , zorder=18)
-    plt.legend()
-    plt.title(
-        "error of test interpolation of mode {:.0f} over time".format(mode))
-    ax1.set_xlabel("time")
-    ax2.set_xlabel("time")
-    ax2.set_ylabel("error")
-    plt.xlim(0, 1)
-    plt.savefig(path+"test_RBF_V_mode{:02.0f}_error.png".format(mode), dpi=250)
 
-    # plot data and interpolation of test data
-    fig, ax = plt.subplots(figsize=(plot_width/2.54, plot_width/2.54))
-    for i in range(1, 10):
-        if i != to_be_inetpolated:
-            ax.plot(P_train_n[:, i, 0], Values[:, i], color=cmap(i/9),
-                    marker=".", linestyle="",
-                    label="p = {:.2f}".format(P_train_n[0, i, 1]))
-    for d, lbl in zip(data, labels):
-        ax.plot(xi_val[:, 0], d, label=lbl)  # , zorder=19)
-    plt.legend()
-    plt.title(
-        "test interpolation of mode {:.0f} over time".format(mode))
-    ax.set_xlabel("time")
-    ax.set_ylabel("right singular value")
-    plt.xlim(0, 1)
-    plt.ylim(Values.min(), Values.max())
-    plt.savefig(path+"test_RBF_V_mode{:02.0f}.png".format(mode), dpi=250)
 
-    # interpolate on whole domain
-    x__ = np.linspace(0, 1, 50)
-    XI, YI = np.meshgrid(time, x__, indexing="ij")
-    xi = np.concatenate((XI.reshape(-1, 1), YI.reshape(-1, 1)), axis=1)
 
-    data = []
-    for i, interpolator in enumerate([rbfi, bf_rgi, rgi, cti, dmd_lin, dmd_cub]):
-        t0 = timeit.default_timer()
-        if i < 4:
-            data[i:i] = [interpolator(xi[:, :2])]
-        else:
-            data[i:i] = [interpolator(x__)]
-        print(timeit.default_timer()-t0)
+    if mode <= 20 or (100 < mode and mode <= 120):
+        # plot interpolation of test data and error
+        fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True,
+                                       figsize=(plot_width/2.54, plot_width/2.54))
+        i = 0
+        for d, lbl in zip(data, labels):
+            e = V_orig-data[i]
+            lbl +="\n(error: {:.4f})".format(errors[mode, i])
+            ax1.plot(xi_val[:, 0], d,# color=cmap(to_be_inetpolated/9),
+                     # marker="", linestyle="dashdot",
+                     label=lbl)  # , zorder=18)
+            ax2.plot(xi_val[:, 0], e,# color=cmap(to_be_inetpolated/9),
+                     # marker="", linestyle="dashdot",
+                     label=lbl)  # , zorder=18)
+            i += 1
+        plt.legend()
+        plt.title(
+            "error of test interpolation of mode {:.0f} over time".format(mode))
+        ax1.set_xlabel("time")
+        ax2.set_xlabel("time")
+        ax2.set_ylabel("error")
+        plt.xlim(0, 1)
+        plt.savefig(path+"test_RBF_V_mode{:02.0f}_error.png".format(mode), dpi=250)
 
-    lw = .25
-    vmin, vmax = data[-1].min(), data[-1].max()
 
-    fig, ((ax11, ax12), (ax21, ax22), (ax31, ax32)) = plt.subplots(
-        3, 2, sharex=True, sharey=True,
-        figsize=(plot_width/2.54, 2*plot_width/2.54))
-    axs = [ax11, ax21, ax12, ax22, ax31, ax32]
-    titles = labels[1:]
 
-    for d, ax, ttl in zip(data, axs, titles):
-        ax.pcolor(XI, YI, d.reshape(100, 50), vmin=vmin, vmax=vmax,
-                    cmap=cmap, shading='nearest')
-        ax.set_title(ttl)
-        ax.set_xlim(0, 1)
-        ax.set_ylim(0, 1)
 
-        for y_ in x2:
-            ax.plot([0, 1], [y_, y_], "k-", lw=lw)
-        y_ = xi_val[:, 1]
-        ax.plot([0, 1], [y_, y_], "w-", lw=lw)
-        ax.set_aspect("equal")
+        # plot data and interpolation of test data
+        fig, ax = plt.subplots(figsize=(plot_width/2.54, plot_width/2.54))
+        for i in range(1, 10):
+            if i != to_be_inetpolated:
+                ax.plot(P_train_n[:, i, 0], Values[:, i], color=cmap(i/9),
+                        marker=".", linestyle="",
+                        label="p = {:.2f}".format(P_train_n[0, i, 1]))
+        for d, lbl in zip(data, labels):
+            ax.plot(xi_val[:, 0], d, label=lbl)  # , zorder=19)
+        plt.legend()
+        plt.title(
+            "test interpolation of mode {:.0f} over time".format(mode))
+        ax.set_xlabel("time")
+        ax.set_ylabel("right singular value")
+        plt.xlim(0, 1)
+        plt.ylim(Values.min(), Values.max())
+        plt.savefig(path+"test_RBF_V_mode{:02.0f}.png".format(mode), dpi=250)
 
-    plt.savefig(path+"test2_RBF_V_mode{:02.0f}.png".format(mode), dpi=500)
-    plt.close("all")
+
+
+
+
+        # interpolate on whole domain
+        x__ = np.linspace(0, 1, 50)
+        XI, YI = np.meshgrid(time, x__, indexing="ij")
+        xi = np.concatenate((XI.reshape(-1, 1), YI.reshape(-1, 1)), axis=1)
+
+        data = []
+        for i, interpolator in enumerate([rbfi, bf_rgi, rgi, cti, dmd_lin, dmd_cub]):
+            t0 = timeit.default_timer()
+            if i < 4:
+                data[i:i] = [interpolator(xi[:, :2])]
+            else:
+                data[i:i] = [interpolator(x__)]
+            print(timeit.default_timer()-t0)
+
+        lw = .25
+        vmin, vmax = data[-1].min(), data[-1].max()
+
+
+        # plot whole domain
+        fig, ((ax11, ax12), (ax21, ax22), (ax31, ax32)) = plt.subplots(
+            3, 2, sharex=True, sharey=True,
+            figsize=(plot_width/2.54, 2*plot_width/2.54))
+        axs = [ax11, ax21, ax12, ax22, ax31, ax32]
+        titles = labels[1:]
+
+        for d, ax, ttl in zip(data, axs, titles):
+            ax.pcolor(XI, YI, d.reshape(100, 50), vmin=vmin, vmax=vmax,
+                        cmap=cmap, shading='nearest')
+            ax.set_title(ttl)
+            ax.set_xlim(0, 1)
+            ax.set_ylim(0, 1)
+
+            for y_ in x2:
+                ax.plot([0, 1], [y_, y_], "k-", lw=lw)
+            y_ = xi_val[:, 1]
+            ax.plot([0, 1], [y_, y_], "w-", lw=lw)
+            ax.set_aspect("equal")
+
+        plt.savefig(path+"test2_RBF_V_mode{:02.0f}.png".format(mode), dpi=500)
+        plt.close("all")
+
+fig, ax = plt.subplots(figsize=(plot_width/2.54, 2*plot_width/2.54))
+for i in range(1, errors.shape[1]):
+    ax.plot(errors[:, i], label=labels[i])
+plt.legend()

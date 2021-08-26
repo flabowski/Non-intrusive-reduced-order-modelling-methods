@@ -478,7 +478,7 @@ def plot_eps_vs_err2(my_data):
     err = np.zeros_like(epss)
     for j, eps in enumerate(epss):
         # U2, S2, UT2 = truncate_basis(U, S, VT, eps)
-        U2, S2, VT2 = row_svd(X, 4, eps=1-1E-6, ommit_V=True,
+        U2, S2, VT2 = row_svd(X, 4, eps=eps, ommit_V=True,
                               QR_DECOMPOSITION=True)
         X_approx = matmul(U2, matmul(transpose(U2), X))
         err[j] = np.std(X-X_approx)
@@ -513,7 +513,7 @@ def plot_eps_vs_err3(my_data):
     err = np.zeros_like(epss)
     for j, eps in enumerate(epss):
         # U2, S2, UT2 = truncate_basis(U, S, VT, eps)
-        U2, S2, VT2 = row_svd(X, 4, eps=1-1E-6, ommit_V=True,
+        U2, S2, VT2 = row_svd(X, 4, eps=eps, ommit_V=True,
                               QR_DECOMPOSITION=True)
         X_approx = matmul(U2, matmul(transpose(U2), X))
         err[j] = np.std(X-X_approx)
