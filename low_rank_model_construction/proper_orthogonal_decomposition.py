@@ -5,10 +5,12 @@ Created on Wed Jun 23 15:20:04 2021
 @author: florianma
 """
 import numpy as np
-from nirom.src.cross_validation import load_snapshots_cavity, plot_snapshot_cav
+# from nirom.src.cross_validation import load_snapshots_cavity, plot_snapshot_cav
+from nirom.ROM.snapshot_manager import Data, load_snapshots_cavity
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import timeit
+import warnings
 plot_width = 16
 LINALG_LIB = "numpy"
 timed = True
@@ -20,11 +22,11 @@ def tf_svd(X, full_matrices=False):
 
 
 def np_svd(X, full_matrices=False):
-    # tic = timeit.default_timer()
+    tic = timeit.default_timer()
     U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
-    # toc = timeit.default_timer()
-    # print("SVD of X \t{:.0f}\t{:.0f}\t  took \t{:.4}\t seconds.".format(
-    #     X.shape[0], X.shape[1], toc-tic))
+    toc = timeit.default_timer()
+    print("SVD of X \t{:.0f}\t{:.0f}\t  took \t{:.4}\t seconds.".format(
+        X.shape[0], X.shape[1], toc-tic))
     return U, S, Vh
 
 
@@ -175,11 +177,11 @@ def row_svd(X, c, eps, ommit_V, QR_DECOMPOSITION):
     """
     m, n = X.shape
     Nc = np.ceil(n/c).astype(np.int32)
-    # t0 = timeit.default_timer()
+    t0 = timeit.default_timer()
     r = 0
     # there might not be enough data for c blocks
     c = np.ceil(n/Nc).astype(np.int32)
-    additional_svds = int(np.log2(c))
+    additional_svds = np.ceil(np.log2(c)).astype(np.int32)
     eps_per_lvl = eps**(1/(1+additional_svds))
     l_U = [None for i in range(c)]
     l_S = [None for i in range(c)]
@@ -191,17 +193,17 @@ def row_svd(X, c, eps, ommit_V, QR_DECOMPOSITION):
         U, S, VT = truncate_basis(*svd(X[:, s:e]), eps_per_lvl)
         r += len(S)
         l_U[j], l_S[j], l_V[j] = U, S, VT
-    # t1 = timeit.default_timer()
-    # print("svds took {:.4f} s, reduced rank: {:.0f}".format(t1-t0, r))
+    t1 = timeit.default_timer()
+    print("svds took {:.4f} s, reduced rank: {:.0f}".format(t1-t0, r))
     U, S, VT = merge_row(l_U, l_S, l_V, ommit_V, QR_DECOMPOSITION, eps_per_lvl)
     if ommit_V:
         VT = matmul(transpose(U)*1/S[:, None], X)
-    # t2 = timeit.default_timer()
-    # print("merging took {:.4f} s, reduced rank: {:.0f}".format(t2-t1, len(S)))
+    t2 = timeit.default_timer()
+    print("merging took {:.4f} s, reduced rank: {:.0f}".format(t2-t1, len(S)))
     return U, S, VT
 
 
-def merge_row(l_U, l_S, l_V, ommit_V=True, QR_DECOMPOSITION=True, eps=1.0-1E-6):
+def merge_row(l_U, l_S, l_V, ommit_V=True, QR_DECOMPOSITION=True, eps=1-1E-6):
     """
     Merge and truncate a list of SVDs in a tree based manner.
 
@@ -269,6 +271,50 @@ def merge_row(l_U, l_S, l_V, ommit_V=True, QR_DECOMPOSITION=True, eps=1.0-1E-6):
     return U, S, VT
 
 
+def merge_row_sequentially(l_U, l_S, l_V, ommit_V=True, QR_DECOMPOSITION=True, eps=1.0-1E-6):
+    """
+    Merge and truncate a list of SVDs in a tree based manner.
+
+    Assumes the input matrix [X] shaped (m, n) was split into c horizontally
+    adjacent blocks [X1, X2, ..., Xc] shaped (m, n1), (m, n2), ...  (m, nc).
+
+    Parameters
+    ----------
+    l_U : list
+        holding c Matrices with the left singular values of each block.
+    l_S : list
+        holding c Matrices with the singular values of each block..
+    l_V : list
+        holding c Matrices with the right singular values of each block..
+    ommit_V : bool
+        if True, VT is ommited while merging and calculated in the end.
+    QR_DECOMPOSITION : bool
+        if True, the merging algorithm will carry out a qr decomposition to
+        ptentially speed up the process.
+    eps : float
+        for truncating the rank of the SVDs carried out to merge 2 blocks.
+        Truncating is based on the energy of the singular values.
+
+    Returns
+    -------
+    U : (m, r) array_like
+        left singular values.
+    S : (r,) array_like
+        singular values.
+    VT : (r, n) array_like
+        right singular values.
+
+    """
+    if len(l_U) == 1:
+        return l_U[0], l_S[0], l_V[0]
+
+    U, S, VT = l_U[0], l_S[0], l_V[0]
+    for i in range(1, len(l_U)):
+        U, S, VT = merge_horizontally(U, S, VT, l_U[i], l_S[i], [i],
+                                      ommit_V, QR_DECOMPOSITION, eps)
+    return U, S, VT
+
+
 def merge_horizontally(U1, S1, VT1, U2, S2, VT2,
                        ommit_V=True, QR_DECOMPOSITION=True, eps=1.0-1E-6):
     """
@@ -314,9 +360,12 @@ def merge_horizontally(U1, S1, VT1, U2, S2, VT2,
     # print(S1[-5:])
     # print("last 5 basis vectors in U1")
     # print(U1[:, -5:])
+    t1 = timeit.default_timer()
     if QR_DECOMPOSITION:  # preferred methods, as it should be usually faster
         if eps > 1-1E-6:
-            warnings.warn("there might be large numerical errors for eps>1-1E-6. Please set QR_DECOMPOSITION=False or eps=1-1e-6")
+            print(eps)
+            warnings.warn(
+                "there might be large numerical errors for eps>1-1E-6. Please set QR_DECOMPOSITION=False or eps=1-1e-6")
         E = np.zeros((k+l, k+l))
         U1TU2 = matmul(transpose(U1), U2)
         U0 = U2 - matmul(U1, U1TU2)  # m, l
@@ -331,18 +380,21 @@ def merge_horizontally(U1, S1, VT1, U2, S2, VT2,
         E[:, :k] = U1*reshape(S1, (1, k))
         E[:, k:] = U2*reshape(S2, (1, l))
         U, S, VTE = truncate_basis(*svd(E), eps=eps)
+    r = len(S)
     if ommit_V:
-        return U, S, None
+        VT = None
     else:
         k, n1 = VT1.shape
         l, n2 = VT2.shape
-        r = len(S)
         VT = np.empty((r, n1+n2))
         VT[:k, :n1] = matmul(VTE[:k, :k], VT1)
         VT[k:, :n1] = matmul(VTE[k:, :k], VT1)
         VT[:k, n1:] = matmul(VTE[:k, k:], VT2)
         VT[k:, n1:] = matmul(VTE[k:, k:], VT2)
-        return U, S, VT
+    dt = timeit.default_timer()-t1
+    print("merging {:.0f} + {:.0f} -> {:.0f} took {:.2f}".format(k, l, r, dt))
+    return U, S, VT
+
 
 def truncate_basis(U, S, VT, eps):
     """
@@ -409,7 +461,7 @@ def merge_column(l_S, l_V, eps):
 
 def merge_vertically(U1, S1, VT1, U2, S2, VT2, eps):
     # TODO: is that possible using a qr decomposition?
-    # merging two bocks, [X1, X2] = [X]
+    # merging two bocks, [[X1], [X2]] = [X]
     k, n = VT1.shape
     l, n = VT2.shape
     E = np.zeros((k+l, n))  # n, n
@@ -527,80 +579,7 @@ def plot_eps_vs_err3(my_data):
     my_data.X_n.shape = (my_data.s1*my_data.s2, my_data.d1*my_data.d2)
     return
 
-
-class Data:
-
-    # data handling class. takes care of
-    #     - normalising / scaling
-    #     - splitting into train and test data
-    #     -
-
-    def __init__(self, X, xi, x, y, tri, dims, phase_length=None):
-        self.X = X  # snapshots
-        self.xi = xi  # parameterspace
-        self.x = x  # mesh vertices (x)
-        self.y = y  # mesh vertices (y)
-        self.tri = tri  # mesh triangles
-        # n: number of nodes (s1) * number of physical quantities (s2)
-        # m: number of snapshots = num datasets (d2) * snapshots_per_dataset (d1)
-        # r: truncation rank
-        # D: dimension parameterspace (2)
-        # U_x snapshot matrix. SVD: X = U*S*V
-        # X: (n, m) = (s1*s2, d1*d2)
-        # xi: (m, D) = (d1*d2, D)
-        [[s1, s2], [d1, d2]] = dims
-        self.s1, self.s2, self.d1, self.d2 = s1, s2, d1, d2
-        self.dimensions = dims
-        self.phase_length = phase_length
-        self.normalise()
-        return
-
-    def normalise(self):
-        # TODO: maybe rather mean center?
-        # return X, 0.0, 1.0
-        X_min = self.X.min(axis=1)[:, None]  # n
-        X_max = self.X.max(axis=1)[:, None]  # n
-        X_range = X_max - X_min
-        X_range[X_range < 1e-6] = 1e-6
-        self.X_min = X_min
-        self.X_range = X_range
-        self.X_n = self.scale_down(self.X)
-        return self.X_n
-
-    def scale_down(self, Snapshots):
-        return (Snapshots-self.X_min)/self.X_range
-
-    def scale_up(self, Snapshots_n):
-        return Snapshots_n * self.X_range + self.X_min
-
-    def split(self, set_i, phase_length=None):
-        # TODO: find out why its so slow
-        # [[s1, s2], [d1, d2]] = self.dims
-        self.X.shape = (self.s1, self.s2, self.d1, self.d2)
-        self.xi.shape = (self.d1, self.d2, 2)
-
-        i_train = np.delete(np.arange(self.d2), set_i)
-        self.X_train = self.X[..., i_train].copy()
-        self.X_valid = self.X[..., set_i].copy()
-        self.xi_train = self.xi[:, i_train, :].copy()
-        self.xi_valid = self.xi[:, set_i, :].copy()
-
-        n_p = 1
-        if isinstance(self.phase_length, np.ndarray):
-            offset = np.c_[phase_length[i_train],
-                           np.zeros_like(phase_length[i_train])]
-            self.xi_train = np.concatenate((self.xi_train-offset,
-                                            self.xi_train,
-                                            self.xi_train+offset), axis=0)
-            # X_train = np.concatenate((X_train, X_train, X_train), axis=2)
-            n_p = 3  # number of repetitions of each periods
-        self.X.shape = (self.s1*self.s2, self.d1*self.d2)
-        self.xi.shape = (self.d1*self.d2, 2)
-        self.X_train.shape = (self.s1*self.s2, self.d1*(self.d2-1))
-        self.xi_train.shape = (n_p*self.d1*(self.d2-1), 2)
-        self.X_valid.shape = (self.s1*self.s2, self.d1*1)
-        self.xi_valid.shape = (self.d1*1, 2)
-        return self.X_train, self.X_valid, self.xi_train, self.xi_valid
+# np.lib.index_tricks.nd_grid()
 
 
 class POD(Data):
@@ -689,14 +668,21 @@ class POD(Data):
         self.X_n.shape = (self.s1*self.s2, self.d1, self.d2)
         U_hats = np.zeros((self.s1*self.s2, self.d1*self.d2))
         s, e = 0, 0
-        n = 2
+        n = 1
         for i in range(self.d2):
-            X = self.X_n[:, ::n, i]
+            X = self.X_n[:, :: n, i]
             f_name = "_{:03.0f}(every {:.0f} th SS).npy".format(i, n)
             try:
-                U = np.load("U"+f_name)
-                S = np.load("S"+f_name)
-                VT = transpose(np.load("V"+f_name))
+                path = "C:/Users/florianma/"
+                U = np.load(path+"U"+f_name)
+                S = np.load(path+"S"+f_name)
+                VT = transpose(np.load(path+"V"+f_name))
+
+                # T = self.xi[i, 1]
+                # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
+                # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "U"), U)
+                # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "S"), S)
+                # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "VT"), VT)
                 # print("loaded: "+f_name)
             except:
                 U, S, VT = self.svd(X)
@@ -706,10 +692,10 @@ class POD(Data):
                 # print("saved: "+f_name)
             S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps1)
             e = s + U_hat.shape[1]
-            U_hats[:, s:e] = U_hat
+            U_hats[:, s: e] = U_hat
             # print(i, X.shape, U.shape, U_hat.shape)
             s = e
-        U_hats = U_hats[:, :e]
+        U_hats = U_hats[:, : e]
         self.X_n.shape = (self.s1*self.s2, self.d1*self.d2)
         self.U_hats = U_hats
 
@@ -758,9 +744,9 @@ class POD(Data):
         """
         cum_en = np.cumsum(S)/np.sum(S)
         r = np.sum(cum_en < eps)
-        U_hat = U[:, :r]  # (n, r)
-        S_hat = S[:r]  # (r, r) / (r,) wo  non zero elements
-        VT_hat = VT[:r, :]  # (r, d1)
+        U_hat = U[:, : r]  # (n, r)
+        S_hat = S[: r]  # (r, r) / (r,) wo  non zero elements
+        VT_hat = VT[: r, :]  # (r, d1)
 
         self.cum_en = cum_en
         # n = len(S)
@@ -811,7 +797,7 @@ def test_merge(N):
 
     print("split vertically: X = [[X1], [X2]] = ...", end=" ")
     m1, n1 = np.random.randint(1, N-1), np.random.randint(1, N-1)
-    U1, S1, VT1 = svd(X[:m1, :], False)
+    U1, S1, VT1 = svd(X[: m1, :], False)
     U2, S2, VT2 = svd(X[m1:, :], False)
     U, S, VT = merge_vertically(U1, S1, VT1, U2, S2, VT2, eps)
     assert np.allclose(np.abs(U/U_), 1), "merge_vertically failed, U differs."
@@ -843,21 +829,146 @@ def test_merge(N):
     return
 
 
+def test_sequential_merge(my_data):
+    eps = .99999
+    Ts = np.array([400, 425, 450, 475, 500, 525, 550, 575, 600, 625])
+
+    additional_svds = np.ceil(np.log2(len(Ts))).astype(np.int32)
+    eps_per_lvl = eps**(1/(1+additional_svds))
+    l_U, l_S, l_VT = [], [], []
+    t1 = timeit.default_timer()
+    for i, t_amb in enumerate(Ts):  # iteration along d2
+        U = np.load(path+"Tamb{:.0f}_U.npy".format(t_amb))
+        S = np.load(path+"Tamb{:.0f}_S.npy".format(t_amb))
+        VT = np.load(path+"Tamb{:.0f}_VT.npy".format(t_amb))
+        U, S, VT = truncate_basis(U, S, VT, eps_per_lvl)
+        l_U[i:i], l_S[i:i], l_VT[i:i] = [U], [S], [VT]
+    U1, S1, VT1 = merge_row(l_U, l_S, l_VT, ommit_V=True,
+                            QR_DECOMPOSITION=True, eps=eps)
+    t2 = timeit.default_timer()
+    print("merging took {:.4f} s, reduced rank: {:.0f}".format(t2-t1, len(S1)))
+    X_approx = matmul(U1, matmul(transpose(U1), my_data.X_n))
+    print(np.std(my_data.X_n-X_approx))
+    # merge row blocks. r1->r2: eps = 1-1e-4
+    # SVD of X 	5586	5586	  took 	106.6	 seconds.
+    # SVD of X 	5903	5903	  took 	104.5	 seconds.
+    # SVD of X 	6306	6306	  took 	118.6	 seconds.
+    # SVD of X 	6907	6907	  took 	171.1	 seconds.
+    # SVD of X 	7679	7679	  took 	276.0	 seconds.
+    # 32381->22397 |
+    # SVD of X 	8485	8485	  took 	316.5	 seconds.
+    # SVD of X 	9098	9098	  took 	402.0	 seconds.
+    # 22397->14852 |
+    # SVD of X 	10038	10038	  took 	508.7	 seconds.
+    # 14852->10221 |
+    # SVD of X 	10221	10221	  took 	540.6	 seconds.
+    # 10221->5596 |
+    # merging took 2898.1897 s, reduced rank: 5596
+    # 7.93563027082641e-06
+    # 106.6+104.5+118.6+171.1+276.0 + 316.5+402.0 + 508.7 + 540.6 = 2544.6
+
+    # eps = .999
+    # SVD of X 	4858	4858	  took 	53.4	 seconds.
+    # merging 2406 + 2452 -> 3056 took 63.42
+    # SVD of X 	5102	5102	  took 	77.19	 seconds.
+    # merging 2498 + 2604 -> 3131 took 91.04
+    # SVD of X 	5381	5381	  took 	73.35	 seconds.
+    # merging 2641 + 2740 -> 3226 took 88.64
+    # SVD of X 	5797	5797	  took 	88.22	 seconds.
+    # merging 2832 + 2965 -> 3338 took 104.81
+    # SVD of X 	6224	6224	  took 	110.5	 seconds.
+    # merging 3142 + 3082 -> 3359 took 127.90
+    # SVD of X 	6187	6187	  took 	104.8	 seconds.
+    # merging 3056 + 3131 -> 3601 took 122.81
+    # SVD of X 	6564	6564	  took 	120.8	 seconds.
+    # merging 3226 + 3338 -> 3827 took 139.60
+    # SVD of X 	7428	7428	  took 	177.3	 seconds.
+    # merging 3601 + 3827 -> 4177 took 199.86
+    # SVD of X 	7536	7536	  took 	181.9	 seconds.
+    # merging 4177 + 3359 -> 4374 took 204.40
+    # merging took 1154.5480 s, reduced rank: 4374
+    # 7.382204639301287e-05
+    additional_svds = len(Ts)
+    eps_per_lvl = eps**(1/(1+additional_svds))
+    l_U, l_S, l_VT = [], [], []
+    t1 = timeit.default_timer()
+    for i, t_amb in enumerate(Ts):  # iteration along d2
+        U = np.load(path+"Tamb{:.0f}_U.npy".format(t_amb))
+        S = np.load(path+"Tamb{:.0f}_S.npy".format(t_amb))
+        VT = np.load(path+"Tamb{:.0f}_VT.npy".format(t_amb))
+        U, S, VT = truncate_basis(U, S, VT, eps_per_lvl)
+        l_U[i:i], l_S[i:i], l_VT[i:i] = [U], [S], [VT]
+    U2, S2, VT2 = merge_row_sequentially(l_U, l_S, l_VT, ommit_V=True,
+                                         QR_DECOMPOSITION=True, eps=eps)
+    t2 = timeit.default_timer()
+    print("merging took {:.4f} s, reduced rank: {:.0f}".format(t2-t1, len(S2)))
+    X_approx = matmul(U2, matmul(transpose(U2), my_data.X_n))
+    print(np.std(my_data.X_n-X_approx))
+    # merge row blocks. r1->r2: eps = 1-1e-4
+    # SVD of X 	5739	5739	  took 	141.5	 seconds. 2832+2907->4190 |
+    # SVD of X 	7163	7163	  took 	279.6	 seconds. 4190+2973->4661 |
+    # SVD of X 	7754	7754	  took 	328.5	 seconds. 4661+3093->4844 |
+    # SVD of X 	8023	8023	  took 	320.4	 seconds. 4844+3179->4962 |
+    # SVD of X 	8279	8279	  took 	384.7	 seconds. 4962+3317->5062 |
+    # SVD of X 	8531	8531	  took 	382.1	 seconds. 5062+3469->5158 |
+    # SVD of X 	8840	8840	  took 	407.0	 seconds. 5158+3682->5256 |
+    # SVD of X 	9224	9224	  took 	411.9	 seconds. 5256+3968->5369 |
+    # SVD of X 	9407	9407	  took 	422.2	 seconds. 5369+4038->5470 |
+    # merging took 3444.0238 s, reduced rank: 5470
+    # 0.00021152030820343782
+    # 141.5+279.6+328.5+320.4+384.7+382.1+407.0+411.9+422.2 = 3077.9
+
+    # eps = .999
+    # SVD of X 	5165	5165	  took 	62.79	 seconds.
+    # merging 2555 + 2610 -> 3085 took 78.30
+    # SVD of X 	5749	5749	  took 	82.67	 seconds.
+    # merging 3085 + 2664 -> 3373 took 97.37
+    # SVD of X 	6151	6151	  took 	126.4	 seconds.
+    # merging 3373 + 2778 -> 3509 took 144.70
+    # SVD of X 	6336	6336	  took 	147.0	 seconds.
+    # merging 3509 + 2827 -> 3597 took 171.68
+    # SVD of X 	6538	6538	  took 	167.9	 seconds.
+    # merging 3597 + 2941 -> 3677 took 193.88
+    # SVD of X 	6723	6723	  took 	156.3	 seconds.
+    # merging 3677 + 3046 -> 3758 took 184.26
+    # SVD of X 	6967	6967	  took 	177.4	 seconds.
+    # merging 3758 + 3209 -> 3853 took 206.81
+    # SVD of X 	7272	7272	  took 	187.1	 seconds.
+    # merging 3853 + 3419 -> 3974 took 217.74
+    # SVD of X 	7380	7380	  took 	183.5	 seconds.
+    # merging 3974 + 3406 -> 4061 took 209.03
+    # merging took 1513.4007 s, reduced rank: 4061
+    # 0.00010160153641296128
+
+
 if __name__ == "__main__":
     if "my_data" not in locals():
         path = "C:/Users/florianma/Documents/data/freezing_cavity/"
         # X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots_cavity(path)
         my_data = Data(*load_snapshots_cavity(path))
-    plot_eps_vs_err3(my_data)
     asd
+    test_sequential_merge(my_data)
+    asd
+    X = my_data.X_n
+    a = np.arange(len(X[0]))
+    np.random.shuffle(a)
+    # X =
+    U, S, VT = row_svd(X[:, a], 16, eps=1.0-1E-5,
+                       ommit_V=True, QR_DECOMPOSITION=True)
+    asd
+    plot_eps_vs_err3(my_data)
     X = np.random.rand(20, 3)
-    U, S, VT = row_svd(X, 1, eps=1.0-1E-6, ommit_V=True, QR_DECOMPOSITION=True)
+    U, S, VT = row_svd(X, 1, eps=1-1E-6, ommit_V=True,
+                       QR_DECOMPOSITION=True)
     print(VT)
-    U, S, VT = row_svd(X, 1, eps=1.0-1E-6, ommit_V=False, QR_DECOMPOSITION=True)
+    U, S, VT = row_svd(X, 1, eps=1-1E-6, ommit_V=False,
+                       QR_DECOMPOSITION=True)
     print(VT)
-    U, S, VT = row_svd(X, 1, eps=1.0-1E-6, ommit_V=False, QR_DECOMPOSITION=False)
+    U, S, VT = row_svd(X, 1, eps=1-1E-6, ommit_V=False,
+                       QR_DECOMPOSITION=False)
     print(VT)
-    U, S, VT = row_svd(X, 1, eps=1.0-1E-6, ommit_V=True, QR_DECOMPOSITION=False)
+    U, S, VT = row_svd(X, 1, eps=1.0-1E-6, ommit_V=True,
+                       QR_DECOMPOSITION=False)
     print(VT)
     print(U.shape, S.shape, VT.shape)
     # asd
@@ -911,7 +1022,6 @@ if __name__ == "__main__":
             error2 = np.std(X-X_approx)
             print("SVD: ", t3-t2, error2)
 
-
             # t2 = timeit.default_timer()
             # U, S, VT = svd(X)
             # U2, S2, VT2 = truncate_basis(U, S, VT, eps=.999)
@@ -929,9 +1039,6 @@ if __name__ == "__main__":
             # X_approx = matmul(U3, matmul(transpose(U3), X))
             # error2 = np.std(X-X_approx)
             # print("SVD: ", t3-t2, error2)
-
-
-
 
             # print("-----------------------")
 
@@ -980,65 +1087,65 @@ if __name__ == "__main__":
     # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
     # print(VT.shape, VT_.shape, np.allclose(np.abs(VT/VT_), 1))
 
-    asd
-    for N in [100, 250, 500, 1000]:
-        # N = 2000
-        M = N
-        m1, n1 = M//2, N//2
-        X = X_all[:M, :N]
-        t0 = timeit.default_timer()
-        U_, S_, VT_ = svd(X, False)
-        t1 = timeit.default_timer()
-        # X = np.random.rand(1000, 1000)
-        U_, S_, VT_ = svd(X, False)
-        # print("split vertically: X = [[X1], [X2]]", M, N)
-        # t2 = timeit.default_timer()
-        # try:
-        #     U1, S1, VT1 = svd(X[:m1, :], False)
-        # except:
-        #     U1, S1, VT1 = timed_svd_truncated(X[:m1, :], False)
-        # U2, S2, VT2 = svd(X[m1:, :], False)
-        # t3 = timeit.default_timer()
-        # print(t1-t0)
-        # print(t3-t2)
+    # asd
+    # for N in [100, 250, 500, 1000]:
+    #     # N = 2000
+    #     M = N
+    #     m1, n1 = M//2, N//2
+    #     X = X_all[:M, :N]
+    #     t0 = timeit.default_timer()
+    #     U_, S_, VT_ = svd(X, False)
+    #     t1 = timeit.default_timer()
+    #     # X = np.random.rand(1000, 1000)
+    #     U_, S_, VT_ = svd(X, False)
+    #     # print("split vertically: X = [[X1], [X2]]", M, N)
+    #     # t2 = timeit.default_timer()
+    #     # try:
+    #     #     U1, S1, VT1 = svd(X[:m1, :], False)
+    #     # except:
+    #     #     U1, S1, VT1 = timed_svd_truncated(X[:m1, :], False)
+    #     # U2, S2, VT2 = svd(X[m1:, :], False)
+    #     # t3 = timeit.default_timer()
+    #     # print(t1-t0)
+    #     # print(t3-t2)
 
-        # t1 = timeit.default_timer()
-        # U, S, VT = merge_vertically(U1, S1, VT1, U2, S2, VT2, eps)
-        # t2 = timeit.default_timer()
-        # print(np.allclose(X, matmul(U*S, V)))
+    #     # t1 = timeit.default_timer()
+    #     # U, S, VT = merge_vertically(U1, S1, VT1, U2, S2, VT2, eps)
+    #     # t2 = timeit.default_timer()
+    #     # print(np.allclose(X, matmul(U*S, V)))
 
-        print("split horizontally: X = [X1, X2]")
-        U1, S1, VT1 = svd(X[:, :n1], False)
-        U2, S2, VT2 = svd(X[:, n1:], False)
+    #     print("split horizontally: X = [X1, X2]")
+    #     U1, S1, VT1 = svd(X[:, :n1], False)
+    #     U2, S2, VT2 = svd(X[:, n1:], False)
 
-        t3 = timeit.default_timer()
-        # U, S, VT = merge_horizontally(U1, S1, VT1, U2, S2, VT2, eps)
-        t4 = timeit.default_timer()
-        # print(np.allclose(X, matmul(U*S, VT)))
-        t5 = timeit.default_timer()
-        U, S, VT = merge_horizontally2(U1, S1, VT1, U2, S2, VT2, eps)
-        t6 = timeit.default_timer()
-        U, S = merge_horizontally2(U1, S1, None, U2, S2, None, eps)
-        t62 = timeit.default_timer()
-        print(t6-t5)
-        print(t62-t5)
-        print(np.allclose(X, matmul(U*S, VT)))
+    #     t3 = timeit.default_timer()
+    #     # U, S, VT = merge_horizontally(U1, S1, VT1, U2, S2, VT2, eps)
+    #     t4 = timeit.default_timer()
+    #     # print(np.allclose(X, matmul(U*S, VT)))
+    #     t5 = timeit.default_timer()
+    #     U, S, VT = merge_horizontally2(U1, S1, VT1, U2, S2, VT2, eps)
+    #     t6 = timeit.default_timer()
+    #     U, S = merge_horizontally2(U1, S1, None, U2, S2, None, eps)
+    #     t62 = timeit.default_timer()
+    #     print(t6-t5)
+    #     print(t62-t5)
+    #     print(np.allclose(X, matmul(U*S, VT)))
 
-        # merge_blocks(l_U, l_S, eps)
-        t7 = timeit.default_timer()
-        U, S = merge_row([U1, U2], [S1, S2], ommit_V=False, eps=eps)
-        t8 = timeit.default_timer()
-        print(np.allclose(X, matmul(U*S, VT)))
-        print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
-        print(U.shape, U_.shape, np.allclose(np.abs(U), np.abs(U_)))
-        # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
-        print(M, N)
-        # print("merge_vertically", t2-t1)
-        print("merge_horizontally", t4-t3)
-        # print("merge_horizontally2", t6-t5)
-        print("merge_row", t8-t7)
-        print()
-        print()
+    #     # merge_blocks(l_U, l_S, eps)
+    #     t7 = timeit.default_timer()
+    #     U, S = merge_row([U1, U2], [S1, S2], ommit_V=False, eps=eps)
+    #     t8 = timeit.default_timer()
+    #     print(np.allclose(X, matmul(U*S, VT)))
+    #     print(U.shape, U_.shape, np.allclose(np.abs(U/U_), 1))
+    #     print(U.shape, U_.shape, np.allclose(np.abs(U), np.abs(U_)))
+    #     # print(S.shape, S_.shape, np.allclose(S, S_, atol=1e-5, rtol=1e-5))
+    #     print(M, N)
+    #     # print("merge_vertically", t2-t1)
+    #     print("merge_horizontally", t4-t3)
+    #     # print("merge_horizontally2", t6-t5)
+    #     print("merge_row", t8-t7)
+    #     print()
+    #     print()
 
     # X[:500, :400] = 0; X  # 1, 1
     # X[500:, :300] = 0; X  # 2, 1
@@ -1074,4 +1181,5 @@ if __name__ == "__main__":
     #     error = my_POD._2_way_pod(eps, 1.0)
     #     print(eps, error, my_POD.U_hats.shape[1])
     #     error = my_POD._2_way_pod(eps, 1.0)
+    #     print(eps, error, my_POD.U_hats.shape[1])
     #     print(eps, error, my_POD.U_hats.shape[1])

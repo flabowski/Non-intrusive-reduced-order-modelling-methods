@@ -53,7 +53,7 @@ def xxxxx(file, snapshots_per_dataset):
 
 
 def plot_snapshot_cyl(snapshot, x, y, tri,
-                  umin=None, umax=None, pmin=None, pmax=None):
+                      umin=None, umax=None, pmin=None, pmax=None):
     u, v, p, t = np.split(snapshot, 4)
     umin = u.min() if (not umin) else umin
     umax = u.max() if (not umax) else umax
@@ -129,88 +129,7 @@ def plot_eigenfaces(U, x, y, tri):
         plt.suptitle(ttl)
         plt.show()
     return
-
-
-def load_snapshots_cylinder(path):
-    x = np.load(path+"x.npy")
-    y = np.load(path+"y.npy")
-    tri = np.load(path+"tri.npy")
-    time = np.load(path+"Re020_time.npy")
-    Res = np.array([20, 33, 50, 60, 75, 100, 125, 150, 200])
-    s1 = 4  # u, v, p and T
-    s2 = len(x)
-    d1 = len(time)
-    d2 = len(Res)
-    n, m = s1*s2, d1*d2
-    dimensions = [[s1, s2], [d1, d2]]
-    D = len(dimensions[1])  # time and wall temperature
-    print("n physical quantities", s1)
-    print("n_nodes", s2)
-    print("snapshots_per_dataset", d1)
-    print("n_datasets", d2)
-    U = np.zeros((s1, s2, d1, d2))
-    xi = np.zeros((d1, d2, D))
-    for i, Re in enumerate(Res):  # iteration along d2
-        u = np.load(path+"Re{:03.0f}_velocity_u.npy".format(Re))
-        v = np.load(path+"Re{:03.0f}_velocity_v.npy".format(Re))
-        time = np.load(path+"Re{:03.0f}_time.npy".format(Re))
-        # t_min, t_max = time.min(), time.max()
-        # t_range = t_max-t_min
-        # time = (time-t_min)/t_range
-        p = np.load(path+"Re{:03.0f}_pressure.npy".format(Re))
-        U[0, :, :, i] = u
-        U[1, :, :, i] = v
-        U[2, :, :, i] = p
-        # U[3, :, :, i] = temp
-        xi[:, i, 0] = time
-        xi[:, i, 1] = Re
-        print(Re, ":", p.shape, len(time))
-    U.shape = (n, m)
-    xi.shape = (m, D)
-    te = xi[:, 0].reshape(-1, 9).T[:, -1]
-    ts = xi[:, 0].reshape(-1, 9).T[:, 0]
-    phase_length = te-ts
-    return U, xi, x, y, tri, dimensions, phase_length
-
-
-def load_snapshots_cavity(path):
-    x = np.load(path+"x.npy")
-    y = np.load(path+"y.npy")
-    tri = np.load(path+"tri.npy")
-    time = np.load(path+"Tamb400_time.npy")
-    Ts = np.array([400, 425, 450, 475, 500, 525, 550, 575, 600, 625])
-    s1 = 4  # u, v, p and T
-    s2 = len(x)
-    d1 = len(time)
-    d2 = len(Ts)
-    n, m = s1*s2, d1*d2
-    dimensions = [[s1, s2], [d1, d2]]
-    D = len(dimensions[1])  # time and wall temperature
-    print("n physical quantities", s1)
-    print("n_nodes", s2)
-    print("snapshots_per_dataset", d1)
-    print("n_datasets", d2)
-    U = np.zeros((s1, s2, d1, d2))
-    xi = np.zeros((d1, d2, D))
-    for i, t_amb in enumerate(Ts):  # iteration along d2
-        # t_amb = 600
-        # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
-        uv = np.load(path+"Tamb{:.0f}_velocity.npy".format(t_amb)).T.copy()
-        uv.shape = (2, s2, d1)
-        u, v = uv
-        time = np.load(path+"Tamb{:.0f}_time.npy".format(t_amb))  # d1
-        p = np.load(path+"Tamb{:.0f}_pressure.npy".format(t_amb)).T
-        temp = np.load(path+"Tamb{:.0f}_temperature.npy".format(t_amb)).T
-        U[0, :, :, i] = u
-        U[1, :, :, i] = v
-        U[2, :, :, i] = p
-        U[3, :, :, i] = temp
-        xi[:, i, 0] = time
-        xi[:, i, 1] = t_amb
-        print(t_amb, ":", p.shape, len(time))
-    U.shape = (n, m)
-    xi.shape = (m, D)
-    return U, xi, x, y, tri, dimensions, None
+# load_snapshots_cylinder, load_snapshots_cavity moved to rom.snapshot_manager
 
 
 # def create_ROM(X):
@@ -447,12 +366,14 @@ def interpolateV(points, values, xi):
             # print(points.shape, vals.shape, xi.shape)
             d_ = vals.reshape(d1, d2)  # 50, 1
             # print(d_.shape)
-            d = np.concatenate((d_, d_, d_), axis=0)  # 8, 3*150 repeats each oscillation
+            # 8, 3*150 repeats each oscillation
+            d = np.concatenate((d_, d_, d_), axis=0)
             # print(d.shape)
             vals = d.ravel()
             # print(np.allclose(vals, d.ravel()))
             # print(2, points.shape, vals.shape, xi.shape)
-        V_interpolated[:, i] = griddata(points, vals, xi, method='linear').copy()
+        V_interpolated[:, i] = griddata(
+            points, vals, xi, method='linear').copy()
     return V_interpolated
 
 
@@ -549,7 +470,8 @@ if __name__ == "__main__":
         for i in range(1, d2-1):  # we can't extrapolate
             # i = 6
             # set_i, X, xi, dims, phase_length = i, X, xi, dims, phase_length
-            X_train, X_valid, xi_train, xi_valid = split_off(i, X, xi, dims, phase_length)
+            X_train, X_valid, xi_train, xi_valid = split_off(
+                i, X, xi, dims, phase_length)
             X_n, X_min, X_range = normalise(X_train)
 
             S, U, V = tf.linalg.svd(X_n, full_matrices=False)
@@ -578,16 +500,15 @@ if __name__ == "__main__":
 
             x_bp[ns, i] = d1_new
 
-
     IFE_blue = "#1D2982"
     IFE_red = "#E04A1B"
     df = pd.DataFrame(columns=['accuracy (root mean square deviation)',
-                                '# snapshots in each training set'],
+                               '# snapshots in each training set'],
                       data=np.c_[mse[:, 1:-1].ravel(),
-                                  x_bp[:, 1:-1].ravel()])
+                                 x_bp[:, 1:-1].ravel()])
     fig, ax = plt.subplots(figsize=(plot_width/2.54, 10/2.54))
-    ax1  = sns.boxplot(x='# snapshots in each training set',
-                y='accuracy (root mean square deviation)', data=df)
+    ax1 = sns.boxplot(x='# snapshots in each training set',
+                      y='accuracy (root mean square deviation)', data=df)
     sns.stripplot(x='# snapshots in each training set',
                   y='accuracy (root mean square deviation)', data=df,
                   jitter=False, dodge=True, color=IFE_blue, label='_nolegend')

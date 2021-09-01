@@ -5,10 +5,14 @@ Created on Mon May  3 13:30:48 2021
 
 @author: florianma
 """
+import sys
+from ROM.plotting import plot_snapshot_cav
+from ROM.snapshot_manager import get_snapshot_matrix, Data
 import matplotlib.pyplot as plt
 import numpy as np
-import sys, os
-from os.path import isfile, join
+# import sys
+# import os
+# from os.path import isfile, join
 import tensorflow as tf
 from scipy.interpolate import Rbf
 import timeit
@@ -19,13 +23,9 @@ print()
 print(sys.path)
 # print(np.__file__)
 sys.path.append('/home/fenics/shared/')
-from ROM.snapshot_manager import get_snapshot_matrix, Data
-from ROM.plotting import plot_snapshot_cav
 print()
 print(sys.path)
-import sys
 sys.path
-asd
 
 
 class ROM():
@@ -50,9 +50,11 @@ class ROM():
         # points.shape = (self.M, D)
         # self.X, self.points = X, points
         # self.X_n, self.X_min, self.X_range = normalise(X, axis=1)
-        # self.points_n, self.points_min, self.points_range = normalise(points, axis=0)
+        # self.points_n, self.points_min, self.points_range = normalise(points,
+        #                                           axis=0)
         self.data = data
-        S, U, V = tf.linalg.svd(data.X_train_n, full_matrices=False)  # (N, R), (R, R), (M, M)
+        # (N, R), (R, R), (M, M)
+        S, U, V = tf.linalg.svd(data.X_train_n, full_matrices=False)
 
         path = "/home/fenics/shared/doc/"
         np.save(path+"P_train_n.npy", data.P_train_n)
@@ -62,7 +64,7 @@ class ROM():
         self.S = S.numpy()
         self.U = U.numpy()
         self.V = V.numpy()
-        # Psi_s = V.numpy() 
+        # Psi_s = V.numpy()
         # for i in range(10):
         #     for j in range(10):
         #         print(i, j, "{:.6f}".format(np.sum(Psi_s[:, j] * Psi_s[:, i])))
@@ -72,7 +74,8 @@ class ROM():
         """
         Parameters
         ----------
-        xi : 2-D ndarray of floats with shape (m, D), or length D tuple of ndarrays broadcastable to the same shape.
+        xi : 2-D ndarray of floats with shape (m, D), or length D tuple of
+            ndarrays broadcastable to the same shape.
             Points at which to interpolate data.
 
         Returns
@@ -97,11 +100,14 @@ class ROM():
             print(i, end=", ")
             vals = self.V[:, i].copy()
             if method == "rbf":
-                x, y, z, d = data.P_train_n[:, 0], data.P_train_n[:, 1], data.P_train_n[:, 2], vals
-                rbfi = Rbf(x, y, z, d, function="linear")  # radial basis function interpolator instance
+                x, y, z, d = (data.P_train_n[:, 0], data.P_train_n[:, 1],
+                              data.P_train_n[:, 2], vals)
+                # radial basis function interpolator instance
+                rbfi = Rbf(x, y, z, d, function="linear")
                 V_interpolated[:, i] = rbfi(xi[:, 0], xi[:, 1], xi[:, 2])
             else:
-                V_interpolated[:, i] = griddata(data.P_train_n, vals, xi, method=method).copy()
+                V_interpolated[:, i] = griddata(
+                    data.P_train_n, vals, xi, method=method).copy()
         self.V_interpolated = V_interpolated
         return V_interpolated
 
@@ -137,7 +143,8 @@ if __name__ == "__main__":
     my_data.test()
 
     path = "/home/fenics/shared/doc/cavity_solidification_dt(0)/"
-    x, y, tri = np.load(path+"TambLIN_x.npy"), np.load(path+"TambLIN_y.npy"), np.load(path+"TambLIN_tri.npy")
+    x, y = np.load(path+"TambLIN_x.npy"), np.load(path+"TambLIN_y.npy")
+    tri = np.load(path+"TambLIN_tri.npy")
 
     my_ROM = ROM(my_data)
     my_ROM.reduced_rank = 100
@@ -158,7 +165,6 @@ if __name__ == "__main__":
         err_rbf = np.sum((my_data.X_val[:, i] - X_pred_rbf[:, i])**2)**.5
         print(i, err_lin, err_rbf)
 
-
     t = my_data.P_val_n[:, 0]
 
     fig, (ax) = plt.subplots()
@@ -174,7 +180,7 @@ if __name__ == "__main__":
         # ax.plot(t, V_rbf[:, 3], "r-")
         # ax.plot(t, V_rbf[:, 4], "r-")
     plt.savefig("./V.png")
-    
+
     # # plot pred + val
     # print(X_pred)
     # print(X_val)
@@ -200,7 +206,7 @@ if __name__ == "__main__":
     # l = points_n[1] == 0.4827586206896552
     # print(points)
     # points.shape = n_time_instances, n_parameter_values, n_parameters
-    
+
     # fig, (ax1, ax2) = plt.subplots(2, 1)
     # for i in range(n_parameter_values):
     #     t = points[:, i, 0]

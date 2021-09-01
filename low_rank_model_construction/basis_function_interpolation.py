@@ -30,6 +30,11 @@ elif LINALG_LIB == "numpy":
     inv = np.linalg.inv
 
 
+class RightSingularValueInterpolator():
+    def __init__(self, points, values, bounds_error=True, fill_value=np.nan):
+        pass
+
+
 def interpolateV(points, values, xi):
     """
     Parameters

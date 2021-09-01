@@ -105,7 +105,6 @@ def my_square_scatter(axes, x_array, y_array, w, h, **kwargs):
     return True
 
 
-
 P_train_n.shape = (100, 10, 2)
 xi_val = P_train_n[:, test_set, :].copy().reshape(100, 2)
 time = P_train_n[:, ~test_set, 0][:, 0].copy()
@@ -133,7 +132,6 @@ for mode in range(n_modes):
     Values = V[:, mode].copy()
     Values.shape = (100, 10)
 
-
     # z = P_train_n[:, ~test_set, 2].copy().ravel()
 
     # 'multiquadric': sqrt((r/self.epsilon)**2 + 1)
@@ -160,11 +158,13 @@ for mode in range(n_modes):
 
     t0 = timeit.default_timer()
     rgi = RegularGridInterpolator(grid, vals, method=method1)
-    print("set up RegularGridInterpolator: {:.4f} s".format(timeit.default_timer()-t0))
+    print("set up RegularGridInterpolator: {:.4f} s".format(
+        timeit.default_timer()-t0))
 
     t0 = timeit.default_timer()
     cti = CloughTocher2DInterpolator(xy, vals.ravel())
-    print("set up CloughTocher2DInterpolator: {:.4f} s".format(timeit.default_timer()-t0))
+    print("set up CloughTocher2DInterpolator: {:.4f} s".format(
+        timeit.default_timer()-t0))
 
     t0 = timeit.default_timer()
     dmd_lin = SVDInterpolator(grid, vals, method="linear")
@@ -173,8 +173,6 @@ for mode in range(n_modes):
     t0 = timeit.default_timer()
     dmd_cub = SVDInterpolator(grid, vals, method="cubic")
     print("set up SVDInterpolator: {:.4f} s".format(timeit.default_timer()-t0))
-
-
 
     data = [V_orig]  # so data fits labels
     for i, interpolator in enumerate([rbfi, bf_rgi, rgi, cti, dmd_lin, dmd_cub], 1):
@@ -187,21 +185,18 @@ for mode in range(n_modes):
         errors[mode, i] = np.sum(e**2)**.5
         print(labels[i], timeit.default_timer()-t0)
 
-
-
-
-    if mode <= 20 or (100 < mode and mode <= 120):
+    if mode <= 120 or (100 < mode and mode <= 120):
         # plot interpolation of test data and error
         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True,
                                        figsize=(plot_width/2.54, plot_width/2.54))
         i = 0
         for d, lbl in zip(data, labels):
             e = V_orig-data[i]
-            lbl +="\n(error: {:.4f})".format(errors[mode, i])
-            ax1.plot(xi_val[:, 0], d,# color=cmap(to_be_inetpolated/9),
+            lbl += "\n(error: {:.4f})".format(errors[mode, i])
+            ax1.plot(xi_val[:, 0], d,  # color=cmap(to_be_inetpolated/9),
                      # marker="", linestyle="dashdot",
                      label=lbl)  # , zorder=18)
-            ax2.plot(xi_val[:, 0], e,# color=cmap(to_be_inetpolated/9),
+            ax2.plot(xi_val[:, 0], e,  # color=cmap(to_be_inetpolated/9),
                      # marker="", linestyle="dashdot",
                      label=lbl)  # , zorder=18)
             i += 1
@@ -212,10 +207,8 @@ for mode in range(n_modes):
         ax2.set_xlabel("time")
         ax2.set_ylabel("error")
         plt.xlim(0, 1)
-        plt.savefig(path+"test_RBF_V_mode{:02.0f}_error.png".format(mode), dpi=250)
-
-
-
+        plt.savefig(
+            path+"test_RBF_V_mode{:02.0f}_error.png".format(mode), dpi=250)
 
         # plot data and interpolation of test data
         fig, ax = plt.subplots(figsize=(plot_width/2.54, plot_width/2.54))
@@ -235,10 +228,6 @@ for mode in range(n_modes):
         plt.ylim(Values.min(), Values.max())
         plt.savefig(path+"test_RBF_V_mode{:02.0f}.png".format(mode), dpi=250)
 
-
-
-
-
         # interpolate on whole domain
         x__ = np.linspace(0, 1, 50)
         XI, YI = np.meshgrid(time, x__, indexing="ij")
@@ -256,7 +245,6 @@ for mode in range(n_modes):
         lw = .25
         vmin, vmax = data[-1].min(), data[-1].max()
 
-
         # plot whole domain
         fig, ((ax11, ax12), (ax21, ax22), (ax31, ax32)) = plt.subplots(
             3, 2, sharex=True, sharey=True,
@@ -266,7 +254,7 @@ for mode in range(n_modes):
 
         for d, ax, ttl in zip(data, axs, titles):
             ax.pcolor(XI, YI, d.reshape(100, 50), vmin=vmin, vmax=vmax,
-                        cmap=cmap, shading='nearest')
+                      cmap=cmap, shading='nearest')
             ax.set_title(ttl)
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
@@ -284,3 +272,9 @@ fig, ax = plt.subplots(figsize=(plot_width/2.54, 2*plot_width/2.54))
 for i in range(1, errors.shape[1]):
     ax.plot(errors[:, i], label=labels[i])
 plt.legend()
+ax.set_xlim(0, 1000)
+ax.set_ylim(0, 1.5000)
+ax.set_xlabel("mode")
+ax.set_ylabel("error")
+ax.set_xlim(0, 120)
+ax.set_ylim(0, 1.000)
