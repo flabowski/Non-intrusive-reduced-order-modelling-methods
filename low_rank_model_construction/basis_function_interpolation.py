@@ -5,10 +5,11 @@ Created on Mon Jul 12 13:32:44 2021
 @author: florianma
 """
 from scipy.interpolate import (RegularGridInterpolator, RectBivariateSpline,
-                               interpn, griddata, Rbf)  # RBFInterpolator
+                               interpn, griddata, Rbf, interp1d)  # RBFInterpolator
 import numpy as np
-from nirom.src.cross_validation import load_snapshots_cavity, plot_snapshot_cav
-from nirom.low_rank_model_construction.proper_orthogonal_decomposition import Data
+from ROM.snapshot_manager import load_snapshots_cavity  # , plot_snapshot_cav
+from ROM.snapshot_manager import Data
+# from low_rank_model_construction.proper_orthogonal_decomposition import Data
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import timeit
@@ -59,7 +60,7 @@ def interpolateV(points, values, xi):
     m, r = values.shape  # m, n_modes
     d1, D = xi.shape  # snapshots_per_dataset
     d2 = m // d1  # n_trainingsets
-    assert m == d1*d2, "?"
+    assert m == d1 * d2, "?"
 
     V_interpolated = np.zeros((d1, r))
     for i in range(r):
@@ -138,15 +139,127 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
     as usual in this case.
     """
 
-    def __init__(self, points, values, bounds_error=True, fill_value=np.nan):
-        RegularGridInterpolator.__init__(self, points, values, method="linear",
-                                         bounds_error=bounds_error, fill_value=fill_value)
+    def __init__(self, points, values, method="basis functions",
+                 bounds_error=True, fill_value=np.nan):
+        # pukes on unknown method
+        RegularGridInterpolator.__init__(
+            self, points, values, "linear", bounds_error, fill_value)
+        self.method = method
 
         ndim = len(self.grid)
-        self.Phi = [None for d in range(ndim)]
-        self.ind_grd = [None for d in range(ndim)]
-        for d in range(ndim):
-            self.Phi[d], self.ind_grd[d] = self._BF_coeff_along(self.grid[d])
+        if method == "basis functions":
+            self.Phi = [None for d in range(ndim)]
+            self.ind_grd = [None for d in range(ndim)]
+            for d in range(ndim):
+                self.Phi[d], self.ind_grd[d] = self._BF_coeff_along(
+                    self.grid[d])
+        if method == "interpolation functions":
+            self._interpolation_functions()
+
+    def _interpolation_functions(self):
+        grid = self.grid
+        ndim = len(grid)
+        values = self.values
+        if ndim == 1:
+            self.f_x0 = np.array(interp1d(self.grid[0], values),)
+        if ndim == 2:
+            x0, x1 = grid[0], grid[1]
+            n0, n1 = len(grid[0]), len(grid[1])
+            self.f_x0 = np.empty((n1,), dtype=object)
+            self.f_x1 = np.empty((n0,), dtype=object)
+            for j in range(n1):  # functions ALONG x1 (rows)
+                print(x0.shape, values[:, j].shape, values.shape)
+                self.f_x0[j] = interp1d(x0, values[:, j])
+            for i in range(n0):  # functions ALONG columns
+                self.f_x1[i] = interp1d(x1, values[i, :])
+        if ndim == 3:
+            x0, x1, x2 = grid[0], grid[1], grid[2]
+            n0, n1, n2 = len(x0), len(x1), len(x2)
+            self.f_x0 = np.empty((n1, n2), dtype=object)
+            self.f_x1 = np.empty((n0, n2), dtype=object)
+            self.f_x2 = np.empty((n0, n1), dtype=object)
+            # ALONG x0
+            for j in range(n1):
+                for k in range(n2):
+                    self.f_x0[j, k] = interp1d(x0, values[:, j, k])
+            # ALONG x1
+            for i in range(n0):
+                for k in range(n2):
+                    self.f_x1[i, k] = interp1d(x1, values[i, :, k])
+            # ALONG x2
+            for i in range(n0):
+                for j in range(n1):
+                    self.f_x2[i, j] = interp1d(x2, values[i, j, :])
+        if ndim == 4:
+            x0, x1, x2, x3 = grid[0], grid[1], grid[2], grid[3]
+            n0, n1, n2, n3 = len(x0), len(x1), len(x2), len(x3)
+            self.f_x0 = np.empty((n1, n2, n3), dtype=object)
+            self.f_x1 = np.empty((n0, n2, n3), dtype=object)
+            self.f_x2 = np.empty((n0, n1, n3), dtype=object)
+            self.f_x3 = np.empty((n0, n1, n2), dtype=object)
+            # ALONG x0
+            for j in range(n1):
+                for k in range(n2):
+                    for r in range(n3):
+                        self.f_x0[j, k, r] = interp1d(x0, values[:, j, k, r])
+            # ALONG x1
+            for i in range(n0):
+                for k in range(n2):
+                    for r in range(n3):
+                        self.f_x1[i, k, r] = interp1d(x1, values[i, :, k, r])
+            # ALONG x2
+            for i in range(n0):
+                for j in range(n1):
+                    for r in range(n3):
+                        self.f_x2[i, j, k] = interp1d(x2, values[i, j, :, r])
+            # ALONG x3
+            for i in range(n0):
+                for j in range(n1):
+                    for k in range(n2):
+                        self.f_x3[i, j, k] = interp1d(x2, values[i, j, k, :])
+        if ndim == 5:
+            x0, x1, x2, x3, x4 = grid[0], grid[1], grid[2], grid[3], grid[4]
+            n0, n1, n2, n3, n4 = len(x0), len(x1), len(x2), len(x3), len(x4)
+            self.f_x0 = np.empty((n1, n2, n3, n4), dtype=object)
+            self.f_x1 = np.empty((n0, n2, n3, n4), dtype=object)
+            self.f_x2 = np.empty((n0, n1, n3, n4), dtype=object)
+            self.f_x3 = np.empty((n0, n1, n2, n4), dtype=object)
+            self.f_x4 = np.empty((n0, n1, n2, n3), dtype=object)
+            # ALONG x0
+            for j in range(n1):
+                for k in range(n2):
+                    for r in range(n3):
+                        for s in range(n4):
+                            self.f_x0[j, k, r, s] = interp1d(
+                                x0, values[:, j, k, r])
+            # ALONG x1
+            for i in range(n0):
+                for k in range(n2):
+                    for r in range(n3):
+                        for s in range(n4):
+                            self.f_x1[i, k, r, s] = interp1d(
+                                x1, values[i, :, k, r, s])
+            # ALONG x2
+            for i in range(n0):
+                for j in range(n1):
+                    for r in range(n3):
+                        for s in range(n4):
+                            self.f_x2[i, j, r, s] = interp1d(
+                                x2, values[i, j, :, r, s])
+            # ALONG x3
+            for i in range(n0):
+                for j in range(n1):
+                    for k in range(n2):
+                        for s in range(n4):
+                            self.f_x3[i, j, k, s] = interp1d(
+                                x2, values[i, j, k, :, s])
+            # ALONG x4
+            for i in range(n0):
+                for j in range(n1):
+                    for k in range(n2):
+                        for r in range(n3):
+                            self.f_x4[i, j, k, r] = interp1d(
+                                x2, values[i, j, k, r, :])
 
     def __call__(self, xi, method=None):
         """
@@ -180,14 +293,33 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
                     raise ValueError("One of the requested xi is out of bounds"
                                      " in dimension %d" % i)
         indices, norm_distances, out_of_bounds = self._find_indices(xi.T)
-        result = self._evaluate_quadratic(indices, xi, out_of_bounds)
+        if method == "nearest":
+            result = self._evaluate_nearest(indices, norm_distances,
+                                            out_of_bounds)
+        if method == "linear":
+            result = self._evaluate_linear(indices, norm_distances,
+                                           out_of_bounds)
+        if method == "basis functions":
+            result = self._evaluate_quadratic(indices, xi, out_of_bounds)
+        if method == "interpolation functions":
+            result = self._evaluate_interpolation_functions(
+                indices, xi, out_of_bounds)
         if not self.bounds_error and self.fill_value is not None:
             result[out_of_bounds] = self.fill_value
         return result.reshape(xi_shape[:-1] + self.values.shape[ndim:])
 
+    def _evaluate_interpolation_functions(self, indices, norm_distances, out_of_bounds):
+        grid = self.grid
+        if ndim == 3:
+            x0, x1, x2 = grid[0], grid[1], grid[2]
+            n0, n1, n2 = len(x0), len(x1), len(x2)
+            self.f_x0 = np.empty((n1, n2), dtype=object)
+            self.f_x1 = np.empty((n0, n2), dtype=object)
+            self.f_x2 = np.empty((n0, n1), dtype=object)
+
     def _ind_element(self, ind_pt):
         # there are 3 nodes per element, while the side nodes are shared
-        return int(ind_pt//2)
+        return int(ind_pt // 2)
 
     def quadratic_coeff(self, p, i):
         assert len(p) == 3, "need 3 points for quadratic basis function"
@@ -200,8 +332,8 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
             y1, y2 = p[0], p[1]
         else:
             raise ValueError("i must be 0, 1 or 2")
-        n = (yi-y1)*(yi-y2)
-        return (1.0/n, -(y1+y2)/n, y1*y2/n)
+        n = (yi - y1) * (yi - y2)
+        return (1.0 / n, -(y1 + y2) / n, y1 * y2 / n)
 
     def _BF_coeff_along(self, xi):
         # basis functions. shaped i, j, d
@@ -217,12 +349,12 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
         Phi_i = np.zeros((n_elements, 3, 3))
         ind_grd = np.zeros((n_elements), dtype=np.int64)
         ind_element = 0
-        for i in range(0, len(xi)-1, 2):
-            if (i+3) > len(xi):
-                p = xi[i-1:i+2]
-                ind_grd[ind_element] = i-1
+        for i in range(0, len(xi) - 1, 2):
+            if (i + 3) > len(xi):
+                p = xi[i - 1:i + 2]
+                ind_grd[ind_element] = i - 1
             else:
-                p = xi[i:i+3]
+                p = xi[i:i + 3]
                 ind_grd[ind_element] = i
             # print(p)
             Phi_i[ind_element, 0] = self.quadratic_coeff(p, 0)
@@ -247,63 +379,65 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
                     i_element = self._ind_element(indices[d][i])
                     for j in range(3):
                         a, b, c = self.Phi[d][i_element, j, :]
-                        BF[d][j] = a*point[d]**2 + b*point[d] + c
+                        BF[d][j] = a * point[d]**2 + b * point[d] + c
                     grid_index_left[d] = self.ind_grd[d][i_element]
                 if ndim == 1:
                     for j1, bfx in enumerate(BF[0]):
-                        result[i] += bfx * self.values[grid_index_left[0]+j1]
+                        result[i] += bfx * self.values[grid_index_left[0] + j1]
                 if ndim == 2:
                     for j0, bfx in enumerate(BF[0]):
                         for j1, bfy in enumerate(BF[1]):
-                            result[i] += bfx*bfy * \
-                                self.values[grid_index_left[0]+j0,
-                                            grid_index_left[1]+j1]
+                            result[i] += bfx * bfy * \
+                                self.values[grid_index_left[0] + j0,
+                                            grid_index_left[1] + j1]
                 if ndim == 3:
                     for j0, bfx in enumerate(BF[0]):
                         for j1, bfy in enumerate(BF[1]):
                             for j2, bfz in enumerate(BF[2]):
-                                result[i] += bfx*bfy*bfz * \
-                                    self.values[grid_index_left[0]+j0,
-                                                grid_index_left[1]+j1,
-                                                grid_index_left[2]+j2]
+                                result[i] += bfx * bfy * bfz * \
+                                    self.values[grid_index_left[0] + j0,
+                                                grid_index_left[1] + j1,
+                                                grid_index_left[2] + j2]
                 if ndim == 4:
                     for j0, bf0 in enumerate(BF[0]):
                         for j1, bf1 in enumerate(BF[1]):
                             for j2, bf2 in enumerate(BF[2]):
                                 for j3, bf3 in enumerate(BF[3]):
-                                    result[i] += bf0*bf1*bf2*bf3 * \
-                                        self.values[grid_index_left[0]+j0,
-                                                    grid_index_left[1]+j1,
-                                                    grid_index_left[2]+j2,
-                                                    grid_index_left[3]+j3]
+                                    result[i] += bf0 * bf1 * bf2 * bf3 * \
+                                        self.values[grid_index_left[0] + j0,
+                                                    grid_index_left[1] + j1,
+                                                    grid_index_left[2] + j2,
+                                                    grid_index_left[3] + j3]
                 if ndim == 5:
                     for j0, bf0 in enumerate(BF[0]):
                         for j1, bf1 in enumerate(BF[1]):
                             for j2, bf2 in enumerate(BF[2]):
                                 for j3, bf3 in enumerate(BF[3]):
                                     for j4, bf4 in enumerate(BF[3]):
-                                        result[i] += bf0*bf1*bf2*bf3*bf4 * \
-                                            self.values[grid_index_left[0]+j0,
-                                                        grid_index_left[1]+j1,
-                                                        grid_index_left[2]+j2,
-                                                        grid_index_left[3]+j3,
-                                                        grid_index_left[4]+j4]
+                                        result[i] += bf0 * bf1 * bf2 * bf3 * bf4 * \
+                                            self.values[grid_index_left[0] + j0,
+                                                        grid_index_left[1] + j1,
+                                                        grid_index_left[2] + j2,
+                                                        grid_index_left[3] + j3,
+                                                        grid_index_left[4] + j4]
         return result
 
 
 if __name__ == "__main__":
+    path = '/home/florianma@ad.ife.no/Documents/cavity/'
 
     # [[4, 3015], [5000, 10]]
-    f_name = "50kSVD.npy"
-    U = np.load("U"+f_name)
-    S = np.load("S"+f_name)
-    VT = np.load("VT"+f_name)
-    points = np.load("xi.npy")
+    # f_name = "50kSVD.npy"
+    U = np.load(path + "50k_U.npy")
+    S = np.load(path + "50k_S.npy")
+    VT = np.load(path + "50k_VT.npy")
+    x1 = np.load(path + "Tamb650_time.npy")
+    x2 = np.linspace(400, 625, 10)
     # 5240 modes corresponding to a parameterspace shaped (5000, 10)
     VT.shape = (-1, 5000, 10)
-    points.shape = (5000, 10, 2)
-    x1 = points[:, 0, 0]
-    x2 = points[0, :, 1]
+    # points.shape = (5000, 10, 2)
+    # x1 = points[:, 0, 0]
+    # x2 = points[0, :, 1]
 
     values = VT[0, :, :]
     # interpolateV(points, values, xi)
@@ -318,9 +452,9 @@ if __name__ == "__main__":
     print(f.shape)
 
     n = 4
-    n1_f = (n1-1)*n+1
-    n2_f = (n2-1)*n+1
-    n3_f = (n2-1)*n+1
+    n1_f = (n1 - 1) * n + 1
+    n2_f = (n2 - 1) * n + 1
+    n3_f = (n2 - 1) * n + 1
     x1_f = np.linspace(0, 8, n1_f)
     x2_f = np.linspace(100, 500, n2_f)
     x3_f = np.linspace(10, 16, n3_f)
