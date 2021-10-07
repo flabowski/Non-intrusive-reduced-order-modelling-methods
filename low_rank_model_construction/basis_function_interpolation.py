@@ -69,7 +69,7 @@ def interpolateV(grid, values, xi):
     m, n = xi.shape
     r = values.shape[0]
     for dim in range(n):
-        mn = values.shape[dim+1]
+        mn = values.shape[dim + 1]
         msg = "Mismatching arrays! Got {:.0f} grid points along axis {:.0f} but {:.0f} values.".format(
             len(grid[dim]), dim, mn)
         assert len(grid[dim]) == mn, msg
@@ -94,13 +94,13 @@ def interpolateV(grid, values, xi):
 
     V_interpolated = np.zeros((r, m))
     my_interpolating_function = RegularGridInterpolator(grid, values[0, :])
-    my_interpolating_function = Rbf(points, values[0, :])
+    # my_interpolating_function = Rbf(points, values[0, :])
     for i in range(r):
         # points.shape (400, 2) | vals.shape (400, ) | xi.shape (50, 2)
         vals = values[i, :]
         # vals.shape = n,
         my_interpolating_function.values = vals  # cheaper than initializing new
-        my_interpolating_function.di = vals  # cheaper than initializing new
+        # my_interpolating_function.di = vals  # cheaper than initializing new
         V_interpolated[i, :] = my_interpolating_function(xi).ravel()
     return V_interpolated
     # V_interpolated[:, i] = griddata(points, vals, xi, method='linear').copy()

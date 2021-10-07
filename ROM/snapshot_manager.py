@@ -98,28 +98,28 @@ class Data:
         return self.X_n
 
     def scale_down(self, Snapshots):
-        return (Snapshots-self.X_min)/self.X_range
+        return (Snapshots - self.X_min) / self.X_range
 
     def scale_up(self, Snapshots_n):
         return Snapshots_n * self.X_range + self.X_min
 
-    def decompose(self, eps=1.0-1e-6):
+    def decompose(self, eps=1.0 - 1e-6):
         self.U, self.S, self.VT = truncate_basis(*svd(self.X), eps)
         return
 
     def from_reduced_space(self, VT):
-        return matmul(self.U*self.S, VT)
+        return matmul(self.U * self.S, VT)
 
     def to_reduced_space(self, X):
-        return matmul(transpose(self.U)*X)/self.S[:, None]
+        return matmul(transpose(self.U), X) / self.S[:, None]
 
     def L2_rb(self, X):
         X_approx = matmul(self.U, matmul(transpose(self.U), X))
-        return np.sum((X-X_approx)**2)
+        return np.sum((X - X_approx)**2)
 
     def var_rb(self, X):
         L2 = self.L2_rb(X)
-        return L2/len(X)
+        return L2 / len(X)
 
     def std_rb(self, X):
         var = self.var_rb(X)
@@ -152,11 +152,11 @@ def split2D(data, set_i, phase_length=None):
     #                                     data.points_train+offset), axis=0)
     #     # X_train = np.concatenate((X_train, X_train, X_train), axis=2)
     #     n_p = 3  # number of repetitions of each periods
-    data.X.shape = (m, m0*m1)
+    data.X.shape = (m, m0 * m1)
     # data.points.shape = (data.d1*data.d2, 2)
-    X_train.shape = (m, m0*(m1-1))
+    X_train.shape = (m, m0 * (m1 - 1))
     # p_train.shape = (n_p*data.d1*(data.d2-1), 2)
-    X_valid.shape = (m, m0*1)
+    X_valid.shape = (m, m0 * 1)
     # p_valid.shape = (data.d1*1, 2)
     #
     # dims = (data.s1, data.s2, data.d1, 1)
@@ -212,9 +212,9 @@ class Data_old():
 
         self.n_parameter_values = d2 - 1
         self.N, self.M = self.n_state_variables * \
-            self.n_nodes, self.n_time_instances*self.n_parameter_values
+            self.n_nodes, self.n_time_instances * self.n_parameter_values
 
-        train = np.arange(0, self.n_parameter_values+1) != i_val
+        train = np.arange(0, self.n_parameter_values + 1) != i_val
         val = ~train
 
         self.X_train = X_all[..., train].copy()
@@ -227,8 +227,8 @@ class Data_old():
         print(self.P_val.shape)
 
         N, M = self.n_state_variables * \
-            self.n_nodes, self.n_time_instances*self.n_parameter_values
-        D, M_ = self.n_parameters, self.n_time_instances*1
+            self.n_nodes, self.n_time_instances * self.n_parameter_values
+        D, M_ = self.n_parameters, self.n_time_instances * 1
         self.X_train.shape = (N, M)
         self.P_train.shape = (M, D)
 
@@ -263,8 +263,8 @@ class Data_old():
         assert self.X_train_n.max() == 1.0
 
         N, M = self.n_state_variables * \
-            self.n_nodes, self.n_time_instances*self.n_parameter_values
-        D, M_ = self.n_parameters, self.n_time_instances*1
+            self.n_nodes, self.n_time_instances * self.n_parameter_values
+        D, M_ = self.n_parameters, self.n_time_instances * 1
 
         assert self.X_train.shape == (N, M)
         assert self.P_train.shape == (M, D)
@@ -286,7 +286,7 @@ class Data_old():
 
     def normalise(self, X, X_min, X_range):
         # return X, 0.0, 1.0
-        return (X-X_min)/X_range
+        return (X - X_min) / X_range
 
     def rescaleX(self, X):
         return self.rescale(X, self.X_min, self.X_range)
@@ -295,13 +295,13 @@ class Data_old():
         return self.rescale(P, self.P_min, self.P_range)
 
     def rescale(self, X, X_min, X_range):
-        return X*X_range + X_min
+        return X * X_range + X_min
 
 
 def total_energy(time, dT):
     k, A = 0.001, 1.0
     dt = np.diff(time, prepend=0)
-    return np.cumsum(k*A*dT*dt)
+    return np.cumsum(k * A * dT * dt)
 
 
 def get_snapshot_matrix():
@@ -309,8 +309,8 @@ def get_snapshot_matrix():
     fileX = "cavity_solidification_dT_X.npy"
     fileP = "cavity_solidification_dT_P.npy"
     try:
-        X = np.load(path+fileX)
-        P = np.load(path+fileP)
+        X = np.load(path + fileX)
+        P = np.load(path + fileP)
     except:
         print("load snapshot matrix ...")
         s1, s2 = 4, 3015
@@ -320,16 +320,16 @@ def get_snapshot_matrix():
         P = np.zeros((d1, d2, D))  # 100, 10, 3
         dTs = [0, 10, 25, 50, 70, 75, 100, 150, 200, 250, 300]
         for i, dT in enumerate(dTs):
-            mypath = path+"cavity_solidification_dt({:.0f})/".format(dT)
+            mypath = path + "cavity_solidification_dt({:.0f})/".format(dT)
             onlyfiles = [f for f in os.listdir(mypath) if f.endswith(".npy")]
-            time = np.load(mypath+onlyfiles[0])[::50]  # 100, 6030
-            uv = np.load(mypath+onlyfiles[4])[::50]  # 100, 6030
-            p = np.load(mypath+onlyfiles[5])[::50]  # 100, 3015
-            t = np.load(mypath+onlyfiles[6])[::50]  # 100, 3015
+            time = np.load(mypath + onlyfiles[0])[::50]  # 100, 6030
+            uv = np.load(mypath + onlyfiles[4])[::50]  # 100, 6030
+            p = np.load(mypath + onlyfiles[5])[::50]  # 100, 3015
+            t = np.load(mypath + onlyfiles[6])[::50]  # 100, 3015
             print(dT)
             print(uv.min(), uv.max())
             if dT == 0:
-                dT = time/2000*250+50
+                dT = time / 2000 * 250 + 50
             uv.shape = (100, 3015, 2)
             uv.shape = (100, 2, 3015)
             X[0, :, :, i] = uv[:, 1, :].T
@@ -339,22 +339,22 @@ def get_snapshot_matrix():
             P[:, i, 0] = time
             P[:, i, 1] = dT
             P[:, i, 2] = total_energy(time, dT)
-        np.save(path+fileX, X)
-        np.save(path+fileP, P)
+        np.save(path + fileX, X)
+        np.save(path + fileP, P)
     return X, P
 
 
 def load_snapshots_cylinder(path):
-    x = np.load(path+"x.npy")
-    y = np.load(path+"y.npy")
-    tri = np.load(path+"tri.npy")
-    time = np.load(path+"Re020_time.npy")
+    x = np.load(path + "x.npy")
+    y = np.load(path + "y.npy")
+    tri = np.load(path + "tri.npy")
+    time = np.load(path + "Re020_time.npy")
     Res = np.array([20, 33, 50, 60, 75, 100, 125, 150, 200])
     s1 = 4  # u, v, p and T
     s2 = len(x)
     d1 = len(time)
     d2 = len(Res)
-    n, m = s1*s2, d1*d2
+    n, m = s1 * s2, d1 * d2
     dimensions = [[s1, s2], [d1, d2]]
     D = len(dimensions[1])  # time and wall temperature
     print("n physical quantities", s1)
@@ -364,13 +364,13 @@ def load_snapshots_cylinder(path):
     U = np.zeros((s1, s2, d1, d2))
     xi = np.zeros((d1, d2, D))
     for i, Re in enumerate(Res):  # iteration along d2
-        u = np.load(path+"Re{:03.0f}_velocity_u.npy".format(Re))
-        v = np.load(path+"Re{:03.0f}_velocity_v.npy".format(Re))
-        time = np.load(path+"Re{:03.0f}_time.npy".format(Re))
+        u = np.load(path + "Re{:03.0f}_velocity_u.npy".format(Re))
+        v = np.load(path + "Re{:03.0f}_velocity_v.npy".format(Re))
+        time = np.load(path + "Re{:03.0f}_time.npy".format(Re))
         # t_min, t_max = time.min(), time.max()
         # t_range = t_max-t_min
         # time = (time-t_min)/t_range
-        p = np.load(path+"Re{:03.0f}_pressure.npy".format(Re))
+        p = np.load(path + "Re{:03.0f}_pressure.npy".format(Re))
         U[0, :, :, i] = u
         U[1, :, :, i] = v
         U[2, :, :, i] = p
@@ -382,21 +382,21 @@ def load_snapshots_cylinder(path):
     xi.shape = (m, D)
     te = xi[:, 0].reshape(-1, 9).T[:, -1]
     ts = xi[:, 0].reshape(-1, 9).T[:, 0]
-    phase_length = te-ts
+    phase_length = te - ts
     return U, xi, x, y, tri, dimensions, phase_length
 
 
 def load_snapshots_cavity(path):
-    x = np.load(path+"x.npy")
-    y = np.load(path+"y.npy")
-    tri = np.load(path+"tri.npy")
-    time = np.load(path+"Tamb400_time.npy")
+    x = np.load(path + "x.npy")
+    y = np.load(path + "y.npy")
+    tri = np.load(path + "tri.npy")
+    time = np.load(path + "Tamb400_time.npy")
     Ts = np.array([400, 425, 450, 475, 500, 525, 550, 575, 600, 625])
     s1 = 4  # u, v, p and T
     s2 = len(x)
     d1 = len(time)
     d2 = len(Ts)
-    n, m = s1*s2, d1*d2
+    n, m = s1 * s2, d1 * d2
     dimensions = [[s1, s2], [d1, d2]]
     D = len(dimensions[1])  # time and wall temperature
     print("n physical quantities", s1)
@@ -408,12 +408,12 @@ def load_snapshots_cavity(path):
     for i, t_amb in enumerate(Ts):  # iteration along d2
         # t_amb = 600
         # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
-        uv = np.load(path+"Tamb{:.0f}_velocity.npy".format(t_amb)).T.copy()
+        uv = np.load(path + "Tamb{:.0f}_velocity.npy".format(t_amb)).T.copy()
         uv.shape = (2, s2, d1)
         u, v = uv
-        time = np.load(path+"Tamb{:.0f}_time.npy".format(t_amb))  # d1
-        p = np.load(path+"Tamb{:.0f}_pressure.npy".format(t_amb)).T
-        temp = np.load(path+"Tamb{:.0f}_temperature.npy".format(t_amb)).T
+        time = np.load(path + "Tamb{:.0f}_time.npy".format(t_amb))  # d1
+        p = np.load(path + "Tamb{:.0f}_pressure.npy".format(t_amb)).T
+        temp = np.load(path + "Tamb{:.0f}_temperature.npy".format(t_amb)).T
         X[0, :, :, i] = u
         X[1, :, :, i] = v
         X[2, :, :, i] = p
