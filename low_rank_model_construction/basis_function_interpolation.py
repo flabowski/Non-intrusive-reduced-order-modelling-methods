@@ -10,11 +10,11 @@ import numpy as np
 from ROM.snapshot_manager import load_snapshots_cavity  # , plot_snapshot_cav
 from ROM.snapshot_manager import Data
 # from low_rank_model_construction.proper_orthogonal_decomposition import Data
-import tensorflow as tf
+# import tensorflow as tf
 import matplotlib.pyplot as plt
 import timeit
 plot_width = 16
-LINALG_LIB = "tensorflow"
+LINALG_LIB = "numpy"
 timed = True
 
 if LINALG_LIB == "tensorflow":
@@ -36,64 +36,72 @@ class RightSingularValueInterpolator():
         pass
 
 
-def interpolateV(points, values, xi):
+def interpolateV(grid, values, xi):
     """
+    Interpolation on a regular grid in arbitrary dimensions
+
+    The data must be defined on a regular grid; the grid spacing however may be uneven.
+    The interpolation is repeated r times.
+
     Parameters
     ----------
-    points : 2-D ndarray of floats with shape (m, D), or length D tuple of 1-D ndarrays with shape (m,).
-        Data point coordinates.
-    values : ndarray of float or complex, shape (m, r). V Matrix from SVD (not V.T!)
-        Data values.
-    xi : 2-D ndarray of floats with shape (m, D), or length D tuple of ndarrays broadcastable to the same shape.
+    points : n-D ndarray of floats with shapes (m0, m1, ..., mn)
+        The points defining the regular grid in n dimensions.
+    values : array_like, shape (r, m0, ..., mn, ...)
+        The data on the regular grid in n dimensions.
+    xi : 2-D ndarray of floats with shape (m, n).
         Points at which to interpolate data.
 
     Returns
     -------
     V_interpolated : ndarray
         Array of interpolated values.
-
-    n: n_modes = n_nodes*4 (u,v,p,t)
-    D: 2 (time and Tamb or mu)
-    r: 12 reduced rank
     """
-    m, D = points.shape
-    m, r = values.shape  # m, n_modes
-    d1, D = xi.shape  # snapshots_per_dataset
-    d2 = m // d1  # n_trainingsets
-    assert m == d1 * d2, "?"
+    #
+    # values may be the snapshot matrix shaped m, m0, m1, .. mn
+    # or VT shaped r, m0, m1, ..., mn
+    # m0: number of timesteps
+    # m1: number of different wall temperatures
 
-    V_interpolated = np.zeros((d1, r))
+    # need grid as input: RegularGridInterpolator, BasisFunctionRegularGridInterpolator
+    # need points as input: Rbf, CloughTocher2DInterpolator
+    # need to reinitialize every time: CloughTocher2DInterpolator, splines
+    m, n = xi.shape
+    r = values.shape[0]
+    for dim in range(n):
+        mn = values.shape[dim+1]
+        msg = "Mismatching arrays! Got {:.0f} grid points along axis {:.0f} but {:.0f} values.".format(
+            len(grid[dim]), dim, mn)
+        assert len(grid[dim]) == mn, msg
+
+    XNs = np.meshgrid(*grid, indexing="ij")
+    points = np.array([XN.ravel() for XN in XNs]).T
+    print(points.shape, values.shape[1:])
+    print("interpolating {:.0f} time(s)".format(r))
+    # if n == 1:
+    #     grid = [points[:].copy()]
+    # elif n == 2:
+    #     grid = [points[0, :].copy(), points[:, 0].copy()]
+    # elif n == 3:
+    #     grid = [points[0, :, :].copy(),
+    #             points[:, 0, :].copy(),
+    #             points[:, :, 0].copy()]
+    # elif n == 4:
+    #     grid = [points[0, :, :, :].copy(),
+    #             points[:, 0, :, :].copy(),
+    #             points[:, :, 0, :].copy(),
+    #             points[:, :, :, 0].copy()]
+
+    V_interpolated = np.zeros((r, m))
+    my_interpolating_function = RegularGridInterpolator(grid, values[0, :])
+    my_interpolating_function = Rbf(points, values[0, :])
     for i in range(r):
         # points.shape (400, 2) | vals.shape (400, ) | xi.shape (50, 2)
-        vals = values[:, i].numpy().copy()
-
-        if vals.shape[0] != points.shape[0]:
-            # print("repeat each oscillation")
-            # print(points.shape, vals.shape, xi.shape)
-            d_ = vals.reshape(d1, d2)  # 50, 1
-            # print(d_.shape)
-            # 8, 3*150 repeats each oscillation
-            d = np.concatenate((d_, d_, d_), axis=0)
-            # print(d.shape)
-            vals = d.ravel()
-            # print(np.allclose(vals, d.ravel()))
-            # print(2, points.shape, vals.shape, xi.shape)
-
-        # methods:
-        # "linear" or "nearest" call RegularGridInterpolator
-        #  "splinef2d" calls RectBivariateSpline
-        v = interpn(points, vals, xi)  # includes expensive triangulation!
-
-        # methods:
-        # 'linear' calls LinearNDInterpolator
-        # 'nearest' calls NearestNDInterpolator
-        # 'cubic' calls CloughTocher2DInterpolator
-        v = griddata(points, vals, xi, method='linear')
-
-        rbfi = Rbf(points[..., 0], points[..., 1], vals)
-        v = rbfi(xi[..., 0], xi[..., 1])
-
-        V_interpolated[:, i] = v.copy()
+        vals = values[i, :]
+        # vals.shape = n,
+        my_interpolating_function.values = vals  # cheaper than initializing new
+        my_interpolating_function.di = vals  # cheaper than initializing new
+        V_interpolated[i, :] = my_interpolating_function(xi).ravel()
     return V_interpolated
     # V_interpolated[:, i] = griddata(points, vals, xi, method='linear').copy()
 
@@ -308,11 +316,33 @@ class BasisFunctionRegularGridInterpolator(RegularGridInterpolator):
             result[out_of_bounds] = self.fill_value
         return result.reshape(xi_shape[:-1] + self.values.shape[ndim:])
 
-    def _evaluate_interpolation_functions(self, indices, norm_distances, out_of_bounds):
-        grid = self.grid
-        if ndim == 3:
-            x0, x1, x2 = grid[0], grid[1], grid[2]
-            n0, n1, n2 = len(x0), len(x1), len(x2)
+    def _evaluate_interpolation_functions(self, indices, xi, out_of_bounds):
+        grid = self.grid  # 8, 11, 3
+        ndim = len(grid)
+        for point in xi:
+            # print(point)
+            if ndim == 3:
+                x0, x1, x2 = grid[0], grid[1], grid[2]
+                n0, n1, n2 = len(x0), len(x1), len(x2)
+                x0, x1, x2 = point
+                # ALONG x0
+                for j in range(n1):
+                    for k in range(n2):
+                        self.f_x0[j, k] = interp1d(x0, values[:, j, k])
+                # ALONG x1
+                for i in range(n0):
+                    for k in range(n2):
+                        self.f_x1[i, k] = interp1d(x1, values[i, :, k])
+                # ALONG x2
+                for i in range(n0):
+                    for j in range(n1):
+                        self.f_x2[i, j] = interp1d(x2, values[i, j, :])
+
+                self.f_x0
+
+                self.f_x1
+                self.f_x2
+
             self.f_x0 = np.empty((n1, n2), dtype=object)
             self.f_x1 = np.empty((n0, n2), dtype=object)
             self.f_x2 = np.empty((n0, n1), dtype=object)
@@ -441,7 +471,6 @@ if __name__ == "__main__":
 
     values = VT[0, :, :]
     # interpolateV(points, values, xi)
-
     n1, n2, n3 = 8, 5, 7
     x1 = np.linspace(0, 8, n1)
     x2 = np.linspace(100, 500, n2)
@@ -460,7 +489,7 @@ if __name__ == "__main__":
     x3_f = np.linspace(10, 16, n3_f)
     xx_f, yy_f, zz_f = np.meshgrid(x1_f, x2_f, x3_f, indexing="ij")
     xi_new = np.array([xx_f.ravel(), yy_f.ravel(),
-                      zz_f.ravel()]).T  # 3, 495000
+                       zz_f.ravel()]).T  # 3, 495000
 
     rgi = BasisFunctionRegularGridInterpolator((x1, x2, x3), values=f)
 

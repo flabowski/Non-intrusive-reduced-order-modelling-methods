@@ -6,8 +6,8 @@ Created on Wed Jun 23 15:20:04 2021
 """
 import numpy as np
 # from nirom.src.cross_validation import load_snapshots_cavity, plot_snapshot_cav
-from nirom.ROM.snapshot_manager import Data, load_snapshots_cavity
-import tensorflow as tf
+# from ROM.snapshot_manager import Data, load_snapshots_cavity
+# import tensorflow as tf
 import matplotlib.pyplot as plt
 import timeit
 import warnings
@@ -21,12 +21,15 @@ def tf_svd(X, full_matrices=False):
     return U, S, transpose(V)
 
 
-def np_svd(X, full_matrices=False):
-    tic = timeit.default_timer()
-    U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
-    toc = timeit.default_timer()
-    print("SVD of X \t{:.0f}\t{:.0f}\t  took \t{:.4}\t seconds.".format(
-        X.shape[0], X.shape[1], toc-tic))
+def np_svd(X, timed=False, full_matrices=False):
+    if timed:
+        tic = timeit.default_timer()
+        U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
+        toc = timeit.default_timer()
+        print("SVD of X \t{:.0f}\t{:.0f}\t  took \t{:.4}\t seconds.".format(
+            X.shape[0], X.shape[1], toc-tic))
+    else:
+        U, S, Vh = np.linalg.svd(X, full_matrices=full_matrices)
     return U, S, Vh
 
 
@@ -582,211 +585,211 @@ def plot_eps_vs_err3(my_data):
 # np.lib.index_tricks.nd_grid()
 
 
-class POD(Data):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+# class POD(Data):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
 
-    # def svd(self, X):
-    #     S, U, VT = tf.linalg.svd(X, full_matrices=False)
-    #     return U.numpy(), S.numpy(), V.numpy()
+#     # def svd(self, X):
+#     #     S, U, VT = tf.linalg.svd(X, full_matrices=False)
+#     #     return U.numpy(), S.numpy(), V.numpy()
 
-    def hierarchical_pod(self, eps):
-        """
-        a tree based merge-and-truncate algorithm to obtain an approximate
-        truncated SVD of the matrix.
+#     def hierarchical_pod(self, eps):
+#         """
+#         a tree based merge-and-truncate algorithm to obtain an approximate
+#         truncated SVD of the matrix.
 
-        Parameters
-        ----------
-        eps : float
-            DESCRIPTION.
+#         Parameters
+#         ----------
+#         eps : float
+#             DESCRIPTION.
 
-        Returns
-        -------
-        None.
+#         Returns
+#         -------
+#         None.
 
-        """
-        # Hierarchical Singular Value Decomposition
-        return
+#         """
+#         # Hierarchical Singular Value Decomposition
+#         return
 
-    def higher_order_svd(a, full_matrices=True):
-        # a = np.random.rand(2, 3, 4, 5)
-        # U, S = higher_order_svd(a)
-        # print(S.shape)
-        # print([i.shape for i in U])
-        # a1 = S
-        # for i, _ in enumerate(U):
-        # a1 = np.tensordot(a1, U[i], (0, 1))
-        # print(np.allclose(a, a1))
-        # core_tensor = a
-        left_singular_basis = []
-        for k in range(a.ndim):
-            unfold = np.reshape(np.moveaxis(a, k, 0), (a.shape[k], -1))
-            U, _, _ = svd(unfold, full_matrices=full_matrices)
-            left_singular_basis.append(U)
-            U_c = transpose(U).conj()
-            a = np.tensordot(a, U_c, (0, 1))
-        return left_singular_basis, a
+#     def higher_order_svd(a, full_matrices=True):
+#         # a = np.random.rand(2, 3, 4, 5)
+#         # U, S = higher_order_svd(a)
+#         # print(S.shape)
+#         # print([i.shape for i in U])
+#         # a1 = S
+#         # for i, _ in enumerate(U):
+#         # a1 = np.tensordot(a1, U[i], (0, 1))
+#         # print(np.allclose(a, a1))
+#         # core_tensor = a
+#         left_singular_basis = []
+#         for k in range(a.ndim):
+#             unfold = np.reshape(np.moveaxis(a, k, 0), (a.shape[k], -1))
+#             U, _, _ = svd(unfold, full_matrices=full_matrices)
+#             left_singular_basis.append(U)
+#             U_c = transpose(U).conj()
+#             a = np.tensordot(a, U_c, (0, 1))
+#         return left_singular_basis, a
 
-    def _2_way_pod(self, eps1, eps2):
-        # #[eps, error, n basis vectors (avg, per dataset)],
-        # res = np.array([
-        # [1.000000000, 0.000649143, 416.3], [1, 0.000649143, 416.3],
-        # [0.994897959, 0.001054028, 251.5], [0.989795918, 0.00118231, 211],
-        # [0.984693878, 0.001342111, 181.3], [0.979591837, 0.001533657, 157.4],
-        # [0.974489796, 0.001778205, 137.4], [0.973684211, 0.001824512, 134.5],
-        # [0.969387755, 0.002076038, 120.3], [0.964285714, 0.002402765, 105.2],
-        # [0.959183673, 0.002712533, 91.7], [0.954081633, 0.003031809, 79.9],
-        # [0.948979592, 0.003378348, 69.5], [0.947368421, 0.00349487, 66.3],
-        # [0.943877551, 0.003744284, 60.2], [0.93877551, 0.004137558, 52],
-        # [0.933673469, 0.004531132, 45.2], [0.928571429, 0.004951166, 39.3],
-        # [0.923469388, 0.005380647, 34.4], [0.921052632, 0.005613473, 32.2],
-        # [0.918367347, 0.005870244, 30.1], [0.913265306, 0.006364088, 26.4],
-        # [0.908163265, 0.006875367, 23.5], [0.903061224, 0.007418286, 20.9],
-        # [0.897959184, 0.008020077, 18.6], [0.894736842, 0.00837866, 17.4],
-        # [0.892857143, 0.008667827, 16.6], [0.887755102, 0.009338536, 15],
-        # [0.882653061, 0.010072033, 13.6], [0.87755102, 0.010745011, 12.4],
-        # [0.872448980, 0.011194270, 11.6], [0.868421053, 0.01183017, 10.8],
-        # [0.867346939, 0.012081178, 10.5], [0.862244898, 0.012796338, 9.8],
-        # [0.857142857, 0.013526181, 9.2], [0.852040816, 0.014283143, 8.5],
-        # [0.846938776, 0.015037375, 8.0], [0.842105263, 0.015727348, 7.7],
-        # [0.841836735, 0.015727348, 7.7], [0.836734694, 0.016882615, 7.1],
-        # [0.831632653, 0.017513710, 6.7], [0.826530612, 0.018314773, 6.4],
-        # [0.821428571, 0.018648107, 6.2], [0.815789474, 0.020361032, 5.7],
-        # [0.816326531, 0.020361032, 5.7], [0.81122449, 0.02121174, 5.5],
-        # [0.806122449, 0.022170866, 5.3], [0.801020408, 0.022990563, 5.2],
-        # [0.795918367, 0.023983465, 5.0], [0.789473684, 0.027309363, 4.4],
-        # [0.790816327, 0.027309363, 4.4], [0.785714286, 0.027996551, 4.3],
-        # [0.780612245, 0.029564418, 4.2], [0.775510204, 0.031077579, 4.1],
-        # [0.765306122, 0.032118860, 4.0], [0.770408163, 0.03211886, 4],
-        # [0.763157895, 0.032865164, 3.7], [0.760204082, 0.033701762, 3.4],
-        # [0.755102041, 0.034560932, 3.3], [0.75, 0.035673262, 3.2],
-        # [0.736842105, 0.038180729, 3.0], [0.710526316, 0.042435443, 2.3],
-        # [0.684210526, 0.062167254, 2.0], [0.657894737, 0.064424002, 1.9],
-        # [0.578947368, 0.135025099, 1.0], [0.605263158, 0.135025099, 1],
-        # [0.631578947, 0.135025099, 1.0], [0.552631579, 0.137783313, 0.9],
-        # [0.526315789, 0.139093005, 0.8], [0.5, 0.15059241, 0.5]])
-        self.X_n.shape = (self.s1*self.s2, self.d1, self.d2)
-        U_hats = np.zeros((self.s1*self.s2, self.d1*self.d2))
-        s, e = 0, 0
-        n = 1
-        for i in range(self.d2):
-            X = self.X_n[:, :: n, i]
-            f_name = "_{:03.0f}(every {:.0f} th SS).npy".format(i, n)
-            try:
-                path = "C:/Users/florianma/"
-                U = np.load(path+"U"+f_name)
-                S = np.load(path+"S"+f_name)
-                VT = transpose(np.load(path+"V"+f_name))
+#     def _2_way_pod(self, eps1, eps2):
+#         # #[eps, error, n basis vectors (avg, per dataset)],
+#         # res = np.array([
+#         # [1.000000000, 0.000649143, 416.3], [1, 0.000649143, 416.3],
+#         # [0.994897959, 0.001054028, 251.5], [0.989795918, 0.00118231, 211],
+#         # [0.984693878, 0.001342111, 181.3], [0.979591837, 0.001533657, 157.4],
+#         # [0.974489796, 0.001778205, 137.4], [0.973684211, 0.001824512, 134.5],
+#         # [0.969387755, 0.002076038, 120.3], [0.964285714, 0.002402765, 105.2],
+#         # [0.959183673, 0.002712533, 91.7], [0.954081633, 0.003031809, 79.9],
+#         # [0.948979592, 0.003378348, 69.5], [0.947368421, 0.00349487, 66.3],
+#         # [0.943877551, 0.003744284, 60.2], [0.93877551, 0.004137558, 52],
+#         # [0.933673469, 0.004531132, 45.2], [0.928571429, 0.004951166, 39.3],
+#         # [0.923469388, 0.005380647, 34.4], [0.921052632, 0.005613473, 32.2],
+#         # [0.918367347, 0.005870244, 30.1], [0.913265306, 0.006364088, 26.4],
+#         # [0.908163265, 0.006875367, 23.5], [0.903061224, 0.007418286, 20.9],
+#         # [0.897959184, 0.008020077, 18.6], [0.894736842, 0.00837866, 17.4],
+#         # [0.892857143, 0.008667827, 16.6], [0.887755102, 0.009338536, 15],
+#         # [0.882653061, 0.010072033, 13.6], [0.87755102, 0.010745011, 12.4],
+#         # [0.872448980, 0.011194270, 11.6], [0.868421053, 0.01183017, 10.8],
+#         # [0.867346939, 0.012081178, 10.5], [0.862244898, 0.012796338, 9.8],
+#         # [0.857142857, 0.013526181, 9.2], [0.852040816, 0.014283143, 8.5],
+#         # [0.846938776, 0.015037375, 8.0], [0.842105263, 0.015727348, 7.7],
+#         # [0.841836735, 0.015727348, 7.7], [0.836734694, 0.016882615, 7.1],
+#         # [0.831632653, 0.017513710, 6.7], [0.826530612, 0.018314773, 6.4],
+#         # [0.821428571, 0.018648107, 6.2], [0.815789474, 0.020361032, 5.7],
+#         # [0.816326531, 0.020361032, 5.7], [0.81122449, 0.02121174, 5.5],
+#         # [0.806122449, 0.022170866, 5.3], [0.801020408, 0.022990563, 5.2],
+#         # [0.795918367, 0.023983465, 5.0], [0.789473684, 0.027309363, 4.4],
+#         # [0.790816327, 0.027309363, 4.4], [0.785714286, 0.027996551, 4.3],
+#         # [0.780612245, 0.029564418, 4.2], [0.775510204, 0.031077579, 4.1],
+#         # [0.765306122, 0.032118860, 4.0], [0.770408163, 0.03211886, 4],
+#         # [0.763157895, 0.032865164, 3.7], [0.760204082, 0.033701762, 3.4],
+#         # [0.755102041, 0.034560932, 3.3], [0.75, 0.035673262, 3.2],
+#         # [0.736842105, 0.038180729, 3.0], [0.710526316, 0.042435443, 2.3],
+#         # [0.684210526, 0.062167254, 2.0], [0.657894737, 0.064424002, 1.9],
+#         # [0.578947368, 0.135025099, 1.0], [0.605263158, 0.135025099, 1],
+#         # [0.631578947, 0.135025099, 1.0], [0.552631579, 0.137783313, 0.9],
+#         # [0.526315789, 0.139093005, 0.8], [0.5, 0.15059241, 0.5]])
+#         self.X_n.shape = (self.s1*self.s2, self.d1, self.d2)
+#         U_hats = np.zeros((self.s1*self.s2, self.d1*self.d2))
+#         s, e = 0, 0
+#         n = 1
+#         for i in range(self.d2):
+#             X = self.X_n[:, :: n, i]
+#             f_name = "_{:03.0f}(every {:.0f} th SS).npy".format(i, n)
+#             try:
+#                 path = "C:/Users/florianma/"
+#                 U = np.load(path+"U"+f_name)
+#                 S = np.load(path+"S"+f_name)
+#                 VT = transpose(np.load(path+"V"+f_name))
 
-                # T = self.xi[i, 1]
-                # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
-                # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "U"), U)
-                # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "S"), S)
-                # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "VT"), VT)
-                # print("loaded: "+f_name)
-            except:
-                U, S, VT = self.svd(X)
-                np.save("U"+f_name, U)
-                np.save("S"+f_name, S)
-                np.save("VT"+f_name, VT)
-                # print("saved: "+f_name)
-            S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps1)
-            e = s + U_hat.shape[1]
-            U_hats[:, s: e] = U_hat
-            # print(i, X.shape, U.shape, U_hat.shape)
-            s = e
-        U_hats = U_hats[:, : e]
-        self.X_n.shape = (self.s1*self.s2, self.d1*self.d2)
-        self.U_hats = U_hats
+#                 # T = self.xi[i, 1]
+#                 # path = "C:/Users/florianma/Documents/data/freezing_cavity/"
+#                 # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "U"), U)
+#                 # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "S"), S)
+#                 # np.save(path+"Tamb{:.0f}_{}.npy".format(T, "VT"), VT)
+#                 # print("loaded: "+f_name)
+#             except:
+#                 U, S, VT = self.svd(X)
+#                 np.save("U"+f_name, U)
+#                 np.save("S"+f_name, S)
+#                 np.save("VT"+f_name, VT)
+#                 # print("saved: "+f_name)
+#             S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps1)
+#             e = s + U_hat.shape[1]
+#             U_hats[:, s: e] = U_hat
+#             # print(i, X.shape, U.shape, U_hat.shape)
+#             s = e
+#         U_hats = U_hats[:, : e]
+#         self.X_n.shape = (self.s1*self.s2, self.d1*self.d2)
+#         self.U_hats = U_hats
 
-        # print(U_hats.shape)
-        # self = my_POD
-        # U_hats = self.U_hats
-        # U_hat = self.U_hat
-        # S, U, VT = self.S, self.U, self.VT
-        # S_hat, U_hat, VT_hat = self.S_hat, self.U_hat, self.VT_hat
-        # print(U_hats.shape)
+#         # print(U_hats.shape)
+#         # self = my_POD
+#         # U_hats = self.U_hats
+#         # U_hat = self.U_hat
+#         # S, U, VT = self.S, self.U, self.VT
+#         # S_hat, U_hat, VT_hat = self.S_hat, self.U_hat, self.VT_hat
+#         # print(U_hats.shape)
 
-        U, S, VT = self.svd(U_hats)
-        S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps2)
-        # print(S.shape, S_hat.shape)
-        # print(U.shape, U_hat.shape)
-        # print(VT.shape, VT_hat.shape)
+#         U, S, VT = self.svd(U_hats)
+#         S_hat, U_hat, VT_hat = self.truncate_basis(S, U, VT, eps2)
+#         # print(S.shape, S_hat.shape)
+#         # print(U.shape, U_hat.shape)
+#         # print(VT.shape, VT_hat.shape)
 
-        X_n_approx = matmul(U_hat, matmul(transpose(U_hat), self.X_n))
-        error = np.std(self.X_n-X_n_approx)
+#         X_n_approx = matmul(U_hat, matmul(transpose(U_hat), self.X_n))
+#         error = np.std(self.X_n-X_n_approx)
 
-        # self.S, self.U, self.VT = S, U, VT
-        # self.S_hat, self.U_hat, self.VT_hat = S_hat, U_hat, VT_hat
-        # self.X_n_approx = X_n_approx
+#         # self.S, self.U, self.VT = S, U, VT
+#         # self.S_hat, self.U_hat, self.VT_hat = S_hat, U_hat, VT_hat
+#         # self.X_n_approx = X_n_approx
 
-        # print(error)
-        # print(np.mean(np.abs(self.X_n-X_n_approx)))
-        # print(np.mean(np.abs(self.X_n/X_n_approx)))
-        # self.X_n.shape = (self.s1*self.s2, self.d1, self.d2)
-        # X_n_approx.shape = (self.s1*self.s2, self.d1, self.d2)
-        # for i in range(60):
-        #     plot_snapshot_cav(X_n_approx[:, 500, i], x, y, tri)
-        #     plt.show()
-        #     plot_snapshot_cav(self.X_n[:, 500, i], x, y, tri)
-        #     plt.show()
+#         # print(error)
+#         # print(np.mean(np.abs(self.X_n-X_n_approx)))
+#         # print(np.mean(np.abs(self.X_n/X_n_approx)))
+#         # self.X_n.shape = (self.s1*self.s2, self.d1, self.d2)
+#         # X_n_approx.shape = (self.s1*self.s2, self.d1, self.d2)
+#         # for i in range(60):
+#         #     plot_snapshot_cav(X_n_approx[:, 500, i], x, y, tri)
+#         #     plt.show()
+#         #     plot_snapshot_cav(self.X_n[:, 500, i], x, y, tri)
+#         #     plt.show()
 
-        # rel_energy = np.cumsum(S) / np.sum(S)
-        # print(rel_energy.shape)
-        # fig, ax = plt.subplots()
-        # plt.plot(rel_energy, "b.")
-        # plt.show()
-        return error
+#         # rel_energy = np.cumsum(S) / np.sum(S)
+#         # print(rel_energy.shape)
+#         # fig, ax = plt.subplots()
+#         # plt.plot(rel_energy, "b.")
+#         # plt.show()
+#         return error
 
-    def truncate_basis(self, S, U, VT, eps):
-        """
-        reduce rank of basis to low rank r
-        """
-        cum_en = np.cumsum(S)/np.sum(S)
-        r = np.sum(cum_en < eps)
-        U_hat = U[:, : r]  # (n, r)
-        S_hat = S[: r]  # (r, r) / (r,) wo  non zero elements
-        VT_hat = VT[: r, :]  # (r, d1)
+#     def truncate_basis(self, S, U, VT, eps):
+#         """
+#         reduce rank of basis to low rank r
+#         """
+#         cum_en = np.cumsum(S)/np.sum(S)
+#         r = np.sum(cum_en < eps)
+#         U_hat = U[:, : r]  # (n, r)
+#         S_hat = S[: r]  # (r, r) / (r,) wo  non zero elements
+#         VT_hat = VT[: r, :]  # (r, d1)
 
-        self.cum_en = cum_en
-        # n = len(S)
-        # fig, axs = plt.subplots(2, 1, sharex=True,
-        #                         figsize=(plot_width/2.54, 10/2.54))
-        # # for i in range(3):
-        # axs[0].plot(np.arange(n), S, "r.")
-        # axs[0].plot(np.arange(r), S[:r], "g.")
-        # axs[1].plot(np.arange(n), cum_en, "r.")
-        # axs[1].plot(np.arange(r), cum_en[:r], "g.")
-        # axs[0].set_yscale('log')
-        # # axs[0].legend()
-        # # axs[1].legend()
-        # axs[0].set_title("First n singular values S")
-        # axs[1].set_title("Cumulative energy [%]")
-        # axs[0].set_xlim(0, n)
-        # # axs[0].set_ylim(1, 1000)
-        # # axs[0].set_ylim(0, S[1])
-        # # axs[0].set_ylim(bottom=0)
-        # axs[1].set_xlabel("Snapshot number")
-        # axs[0].set_ylabel("Singular value")
-        # axs[1].set_ylabel("Energy in %")
-        # # axs[1].set_ylim([0, 100])
-        # plt.tight_layout()
-        # plt.show()
-        return S_hat, U_hat, VT_hat
+#         self.cum_en = cum_en
+#         # n = len(S)
+#         # fig, axs = plt.subplots(2, 1, sharex=True,
+#         #                         figsize=(plot_width/2.54, 10/2.54))
+#         # # for i in range(3):
+#         # axs[0].plot(np.arange(n), S, "r.")
+#         # axs[0].plot(np.arange(r), S[:r], "g.")
+#         # axs[1].plot(np.arange(n), cum_en, "r.")
+#         # axs[1].plot(np.arange(r), cum_en[:r], "g.")
+#         # axs[0].set_yscale('log')
+#         # # axs[0].legend()
+#         # # axs[1].legend()
+#         # axs[0].set_title("First n singular values S")
+#         # axs[1].set_title("Cumulative energy [%]")
+#         # axs[0].set_xlim(0, n)
+#         # # axs[0].set_ylim(1, 1000)
+#         # # axs[0].set_ylim(0, S[1])
+#         # # axs[0].set_ylim(bottom=0)
+#         # axs[1].set_xlabel("Snapshot number")
+#         # axs[0].set_ylabel("Singular value")
+#         # axs[1].set_ylabel("Energy in %")
+#         # # axs[1].set_ylim([0, 100])
+#         # plt.tight_layout()
+#         # plt.show()
+#         return S_hat, U_hat, VT_hat
 
-    def to_reduced_space(self):
-        return
+#     def to_reduced_space(self):
+#         return
 
-    def from_reduced_space(self):
-        return
+#     def from_reduced_space(self):
+#         return
 
-    # predict
-    def predict(S, U, VT, r):
-        # S_hat = S.numpy()[:r]  # (r, r) / (r,) wo  non zero elements
-        # U_hat = U.numpy()[:, :r]  # (n, r)
-        # VT_hat = VT[:, :r]  # (d1, r)
-        X_approx = matmul(U*S, VT)  # n, d1
-        return X_approx
+#     # predict
+#     def predict(S, U, VT, r):
+#         # S_hat = S.numpy()[:r]  # (r, r) / (r,) wo  non zero elements
+#         # U_hat = U.numpy()[:, :r]  # (n, r)
+#         # VT_hat = VT[:, :r]  # (d1, r)
+#         X_approx = matmul(U*S, VT)  # n, d1
+#         return X_approx
 
 
 def test_merge(N):
@@ -942,6 +945,7 @@ def test_sequential_merge(my_data):
 
 
 if __name__ == "__main__":
+    from ROM.snapshot_manager import Data, load_snapshots_cavity
     if "my_data" not in locals():
         path = "C:/Users/florianma/Documents/data/freezing_cavity/"
         # X_all, _xi_all_, x, y, tri, dims_all, phase_length = load_snapshots_cavity(path)

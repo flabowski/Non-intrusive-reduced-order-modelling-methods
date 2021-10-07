@@ -8,6 +8,21 @@ Created on Mon May  3 15:04:00 2021
 import numpy as np
 import os
 import matplotlib.pyplot as plt
+from low_rank_model_construction.proper_orthogonal_decomposition import svd, truncate_basis
+LINALG_LIB = "numpy"
+
+
+if LINALG_LIB == "tensorflow":
+    qr = tf.linalg.qr
+    transpose = tf.transpose
+    matmul = tf.matmul
+    reshape = tf.reshape
+elif LINALG_LIB == "numpy":
+    qr = np.linalg.qr
+    transpose = np.transpose
+    matmul = np.matmul
+    reshape = np.reshape
+    mean = np.mean
 
 
 class Data:
@@ -17,38 +32,41 @@ class Data:
     #     - splitting into train and test data
     #     -
 
-    def __init__(self, X, xi, x, y, tri, dims, phase_length=None):
+    def __init__(self, X, grid):
+        # D = len(grid)
+        XNs = np.meshgrid(*grid, indexing="ij")
+        points = np.array([XN.ravel() for XN in XNs]).T
         self.X = X  # snapshots
-        self.xi = xi  # parameterspace
-        self.x = x  # mesh vertices (x)
-        self.y = y  # mesh vertices (y)
-        self.tri = tri  # mesh triangles
+        self.points = points  # parameterspace
+        self.grid = grid
+        # self.x = x  # mesh vertices (x)
+        # self.y = y  # mesh vertices (y)
+        # self.tri = tri  # mesh triangles
+
+        self.D = len(self.grid)
+        self.mn = [len(xn) for xn in self.grid]
+        self.n = np.prod(self.mn)
+        self.m = len(self.X)
         # n: number of nodes (s1) * number of physical quantities (s2)
         # m: number of snapshots = num datasets (d2) * snapshots_per_dataset (d1)
         # r: truncation rank
         # D: dimension parameterspace (2)
         # U_x snapshot matrix. SVD: X = U*S*V
-        # X: (n, m) = (s1*s2, d1*d2)
-        # xi: (m, D) = (d1*d2, D)
-        [[s1, s2], [d1, d2]] = dims
-        self.s1, self.s2, self.d1, self.d2 = s1, s2, d1, d2
-        self.dimensions = dims
-        self.phase_length = phase_length
-        self.normalise()
+        # X: (m, n) = (s1*s2, d1*d2)
+        # points: (n, D) = (d1*d2, D)
+        # [[s1, s2], [d1, d2]] = dims
+        # self.s1, self.s2, self.d1, self.d2 = s1, s2, d1, d2
+        # self.dimensions = dims
+        # self.phase_length = phase_length
+        # self.normalise()
 
     def test_my_data(self):
-        n, m = self.s1 * self.s2, self.d1*self.d2
-        assert self.X.shape == (n, m)
-        assert self.X_n.shape == (n, m)
-        assert self.xi.shape == (m, 2)
-        # check if the grid is alright
-        assert self.mgrid[0].size == self.xi[..., 0].size
-        assert self.mgrid[1].size == self.xi[..., 1].size
-        assert np.allclose(self.mgrid[0].ravel(), self.xi[..., 0])
-        assert np.allclose(self.mgrid[1].ravel(), self.xi[..., 1])
-        # bounds
-        # assert self.X_n.min() == 0.0  # not true for test data!
-        # assert self.X_n.max() == 1.0  # not true for test data!
+        # m, n = self.s1 * self.s2, self.d1*self.d2
+        assert self.X.shape == (self.m, self.n)
+        assert self.X_n.shape == (self.m, self.n)
+        assert self.points.shape == (self.n, self.D)
+        for i in range(self.D):
+            assert len(self.grid[i]) == self.mn[i]
         return
 
     def test_scaling(self):
@@ -57,7 +75,7 @@ class Data:
         return
 
     def get_grid(self, dim=2):
-        p1, p2 = np.unique(self.xi[..., 0]), np.unique(self.xi[..., 1])
+        p1, p2 = np.unique(self.points[..., 0]), np.unique(self.points[..., 1])
         self.mgrid = np.meshgrid(p1, p2, indexing="ij")
         self.grid = [p1, p2]
         self.test_my_data()
@@ -85,37 +103,67 @@ class Data:
     def scale_up(self, Snapshots_n):
         return Snapshots_n * self.X_range + self.X_min
 
+    def decompose(self, eps=1.0-1e-6):
+        self.U, self.S, self.VT = truncate_basis(*svd(self.X), eps)
+        return
 
-def split(data, set_i, phase_length=None):
+    def from_reduced_space(self, VT):
+        return matmul(self.U*self.S, VT)
+
+    def to_reduced_space(self, X):
+        return matmul(transpose(self.U)*X)/self.S[:, None]
+
+    def L2_rb(self, X):
+        X_approx = matmul(self.U, matmul(transpose(self.U), X))
+        return np.sum((X-X_approx)**2)
+
+    def var_rb(self, X):
+        L2 = self.L2_rb(X)
+        return L2/len(X)
+
+    def std_rb(self, X):
+        var = self.var_rb(X)
+        return np.sqrt(var)
+
+
+def split2D(data, set_i, phase_length=None):
     # TODO: find out why its so slow
+    # TODO: return data_train, data_valid rather than chaning original
     # [[s1, s2], [d1, d2]] = self.dims
-    data.X.shape = (data.s1, data.s2, data.d1, data.d2)
-    data.xi.shape = (data.d1, data.d2, 2)
+    m, n = data.m, data.n
+    m0, m1 = data.mn
 
-    i_train = np.delete(np.arange(data.d2), set_i)
-    data.X_train = data.X[..., i_train].copy()
-    data.X_valid = data.X[..., set_i].copy()
-    data.xi_train = data.xi[:, i_train, :].copy()
-    data.xi_valid = data.xi[:, set_i, :].copy()
+    data.X.shape = (m, m0, m1)
+    # data.points.shape = (m0, m1, 2)
 
-    n_p = 1
-    if isinstance(data.phase_length, np.ndarray):
-        offset = np.c_[phase_length[i_train],
-                       np.zeros_like(phase_length[i_train])]
-        data.xi_train = np.concatenate((data.xi_train-offset,
-                                        data.xi_train,
-                                        data.xi_train+offset), axis=0)
-        # X_train = np.concatenate((X_train, X_train, X_train), axis=2)
-        n_p = 3  # number of repetitions of each periods
-    data.X.shape = (data.s1*data.s2, data.d1*data.d2)
-    data.xi.shape = (data.d1*data.d2, 2)
-    data.X_train.shape = (data.s1*data.s2, data.d1*(data.d2-1))
-    data.xi_train.shape = (n_p*data.d1*(data.d2-1), 2)
-    data.X_valid.shape = (data.s1*data.s2, data.d1*1)
-    data.xi_valid.shape = (data.d1*1, 2)
+    i_train = np.delete(np.arange(m1), set_i)
+    X_train = data.X[..., i_train].copy()
+    X_valid = data.X[..., set_i].copy()
+    x1_train = x1_valid = data.grid[0]
+    x2_train = data.grid[1][i_train].copy()
+    x2_valid = data.grid[1][set_i].copy()
 
-    train_data = Data(X, xi, x, y, tri, dims, phase_length=None)
-    return data.X_train, data.X_valid, data.xi_train, data.xi_valid
+    # n_p = 1
+    # if isinstance(data.phase_length, np.ndarray):
+    #     offset = np.c_[phase_length[i_train],
+    #                    np.zeros_like(phase_length[i_train])]
+    #     data.p_train = np.concatenate((data.points_train-offset,
+    #                                     data.p_train,
+    #                                     data.points_train+offset), axis=0)
+    #     # X_train = np.concatenate((X_train, X_train, X_train), axis=2)
+    #     n_p = 3  # number of repetitions of each periods
+    data.X.shape = (m, m0*m1)
+    # data.points.shape = (data.d1*data.d2, 2)
+    X_train.shape = (m, m0*(m1-1))
+    # p_train.shape = (n_p*data.d1*(data.d2-1), 2)
+    X_valid.shape = (m, m0*1)
+    # p_valid.shape = (data.d1*1, 2)
+    #
+    # dims = (data.s1, data.s2, data.d1, 1)
+    train_data = Data(X_train, (x1_train, x2_train), data.x, data.y, data.tri)
+    # dims = (data.s1, data.s2, data.d1, data.d2-1)
+    valid_data = Data(X_valid, (x1_valid, x2_valid), data.x, data.y, data.tri)
+    return train_data, valid_data
 
 
 class Data_old():
