@@ -103,7 +103,7 @@ class Data:
     def scale_up(self, Snapshots_n):
         return Snapshots_n * self.X_range + self.X_min
 
-    def decompose(self, eps=1.0 - 1e-6):
+    def decompose(self, eps=1.0-1e-6):
         self.U, self.S, self.VT = truncate_basis(*svd(self.X), eps)
         return
 
@@ -113,16 +113,16 @@ class Data:
     def to_reduced_space(self, X):
         return matmul(transpose(self.U), X) / self.S[:, None]
 
-    def L2_rb(self, X):
-        X_approx = matmul(self.U, matmul(transpose(self.U), X))
+    def L2_rb(self, X, X_approx):
+        # X_approx = matmul(self.U, matmul(transpose(self.U), X))
         return np.sum((X - X_approx)**2)
 
-    def var_rb(self, X):
-        L2 = self.L2_rb(X)
+    def var_rb(self, X, Xa):
+        L2 = self.L2_rb(X, Xa)
         return L2 / len(X)
 
-    def std_rb(self, X):
-        var = self.var_rb(X)
+    def std_rb(self, X, Xa):
+        var = self.var_rb(X, Xa)
         return np.sqrt(var)
 
 
