@@ -5,8 +5,9 @@ Created on Mon Jul 12 13:32:44 2021
 @author: florianma
 """
 from scipy.interpolate import (RegularGridInterpolator, RectBivariateSpline,
-                               interpn, griddata, Rbf, interp1d)  # RBFInterpolator
+                               interpn, griddata, Rbf, interp1d, interp2d)  # RBFInterpolator
 import numpy as np
+from scipy.interpolate import griddata, CloughTocher2DInterpolator
 from ROM.snapshot_manager import load_snapshots_cavity  # , plot_snapshot_cav
 from ROM.snapshot_manager import Data
 # from low_rank_model_construction.proper_orthogonal_decomposition import Data
@@ -32,11 +33,62 @@ elif LINALG_LIB == "numpy":
 
 
 class RightSingularValueInterpolator():
-    def __init__(self, points, values, bounds_error=True, fill_value=np.nan):
-        pass
+    def __init__(self, grid, values, method="linear", bounds_error=True, fill_value=np.nan):
+        # m, n = xi.shape
+        d = len(grid)
+        _1D_methods = ['linear', 'nearest', 'nearest-up', 'zero', 'slinear',
+                       'quadratic', 'cubic', 'previous', 'next']
+        _2D_methods = ['linear', 'cubic', 'quintic', "CloughTocher2DInterpolator"]
+        nD_methods = ["linear", "nearest", "rbf", "basis functions"]
+        if d == 1:
+            assert method in _1D_methods, "unknown method '{}'".format(method)
+        elif d == 2:
+            assert method in _2D_methods, "unknown method '{}'".format(method)
+        else:
+            assert method in nD_methods, "unknown method '{}'".format(method)
+        self.r = r = values.shape[0]
+        for dim in range(d):
+            mn = values.shape[dim + 1]
+            msg = "Mismatching arrays! Got {:.0f} grid points along axis {:.0f} but {:.0f} values.".format(
+                len(grid[dim]), dim, mn)
+            assert len(grid[dim]) == mn, msg
+        XNs = np.meshgrid(*grid, indexing="ij")
+        points = np.array([XN.ravel() for XN in XNs]).T
+        # print(points.shape, values.shape[1:])
+        # print("interpolating {:.0f} time(s)".format(r))
+        self.interpolators = np.empty(r, dtype=object)
+        for i in range(r):
+            if d == 1:
+                self.interpolators[i] = interp1d(grid[0],
+                                                 values[i, :], kind=method)
+            elif d == 2:
+                self.interpolators[i] = interp2d(grid[0], grid[0],
+                                                 values[i, :], kind=method)
+            else:
+                if method in ["linear", "nearest"]:
+                    self.interpolators[i] = RegularGridInterpolator(grid, values[i, :], method=method)
+                elif method == "rbf":
+                    self.interpolators[i] = Rbf(points, values[i, :])
+                    # self.interpolators[i] = RBFInterpolator(xy, vals.ravel(), kernel=function)
+                elif method == "basis functions":
+                    self.interpolators[i] = BasisFunctionRegularGridInterpolator(grid, values[i, :])
+                elif method == "CloughTocher2DInterpolator":
+                    self.interpolators[i] = CloughTocher2DInterpolator(points, values[i, :].ravel())
+                else:
+                    raise ValueError("unknown method '{}'".format(method))
+        return
+
+    def __call__(self, xi):
+        n, d = xi.shape
+        # r = values.shape[0]
+        V_interpolated = np.zeros((self.r, n))
+        for i in range(self.r):
+            V_interpolated[i, :] = self.interpolators[i](xi).ravel()
+        return V_interpolated
 
 
-def interpolateV(grid, values, xi):
+def interpolateV(grid, values, xi, method="linear"):
+    # TODO: make me a class
     """
     Interpolation on a regular grid in arbitrary dimensions
 
@@ -93,14 +145,19 @@ def interpolateV(grid, values, xi):
     #             points[:, :, :, 0].copy()]
 
     V_interpolated = np.zeros((r, m))
-    my_interpolating_function = RegularGridInterpolator(grid, values[0, :])
-    # my_interpolating_function = Rbf(points, values[0, :])
+    if method in ["linear", "nearest"]:
+        my_interpolating_function = RegularGridInterpolator(grid, values[0, :], method=method)
+    elif method == "rbf":
+        my_interpolating_function = Rbf(points, values[0, :])
     for i in range(r):
         # points.shape (400, 2) | vals.shape (400, ) | xi.shape (50, 2)
         vals = values[i, :]
-        # vals.shape = n,
-        my_interpolating_function.values = vals  # cheaper than initializing new
-        # my_interpolating_function.di = vals  # cheaper than initializing new
+            # vals.shape = n,
+        if method in ["linear", "nearest"]:
+            my_interpolating_function.values = vals  # cheaper than initializing new
+        elif method == "rbf":
+            my_interpolating_function.di = vals  # cheaper than initializing new
+            my_interpolating_function.nodes = np.linalg.solve(my_interpolating_function.A, my_interpolating_function.di)
         V_interpolated[i, :] = my_interpolating_function(xi).ravel()
     return V_interpolated
     # V_interpolated[:, i] = griddata(points, vals, xi, method='linear').copy()
