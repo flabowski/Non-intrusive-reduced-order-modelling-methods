@@ -14,58 +14,13 @@ from dolfin import (Function, DirichletBC, Expression, TestFunction,
                     VectorFunctionSpace, XDMFFile, MeshValueCollection, cpp)
 from dolfin import (VectorElement, FiniteElement, inner, grad, dx, div, solve,
                     lhs, rhs, split, project, dot)
-from mpi4py import MPI
-import meshio
-from finite_element_solver.domains.cylinder import create_entity_mesh
+# from mpi4py import MPI
+# import meshio
+# from finite_element_solver.domains.cylinder import create_entity_mesh
+# from meshing.cavity import mesh
 # TODO: make a generic module for create_entity_mesh, plot_mesh
 
 
-def create_cavity_mesh(lcar, L=1.0):
-    with pygmsh.geo.Geometry() as geom:
-        p = [geom.add_point([.0, .0], lcar),
-             geom.add_point([L, .0], lcar),
-             geom.add_point([L, L], lcar),
-             geom.add_point([.0, L], lcar)]
-        c = [geom.add_line(p[0], p[1]),
-             geom.add_line(p[1], p[2]),
-             geom.add_line(p[2], p[3]),
-             geom.add_line(p[3], p[0])]
-        ll1 = geom.add_curve_loop([c[0], c[1], c[2], c[3]])
-        s = [geom.add_plane_surface(ll1)]
-        fluid = geom.add_surface_loop(s)
-        # Add physical markers to gmsh
-        # Triangles:
-        # - 0: Fluid
-        # Lines:
-        # - 1: bottom
-        # - 2: right
-        # - 3: top
-        # - 4: left
-        btm = [c[0]]
-        rgt = [c[1]]
-        top = [c[2]]
-        lft = [c[3]]
-        geom.add_physical(fluid, "0")
-        geom.add_physical(btm, "1")
-        geom.add_physical(rgt, "2")
-        geom.add_physical(top, "3")
-        geom.add_physical(lft, "4")
-        # When using physical markers, unused points are placed last in the mesh
-        msh = geom.generate_mesh(dim=2)
-
-    # Write mesh to XDMF which we can easily read into dolfin
-    if MPI.COMM_WORLD.rank == 0:
-        #  Pick one of ['abaqus', 'ansys', 'avsucd', 'cgns', 'dolfin-xml',
-        # 'exodus', 'flac3d', 'gmsh', 'gmsh22', 'h5m', 'hmf', 'mdpa', 'med',
-        # 'medit', 'nastran', 'neuroglancer', 'obj', 'off', 'permas', 'ply',
-        # 'stl', 'su2', 'svg', 'tecplot', 'tetgen', 'ugrid', 'vtk', 'vtu',
-        # 'wkt', 'xdmf'], xdmf fails
-        input_mesh = create_entity_mesh(msh, "triangle", True, True)
-        meshio.write("mesh.xdmf", input_mesh, file_format="xdmf")
-        # meshio.write("mesh.xdmf", input_mesh)
-        meshio.write("mf.xdmf", create_entity_mesh(msh, "line", True),
-                     file_format="xdmf")
-    MPI.COMM_WORLD.barrier()
 
 
 class CavityProblemSetup():
