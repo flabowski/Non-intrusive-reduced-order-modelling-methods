@@ -9,8 +9,41 @@ Simulation gets slower and slower. 1st iteration takes 2s, 10th iteration 30s.
 """
 from dolfin import (Constant, FacetNormal, Identity, assemble, div, dot, ds,
                     dx, grad, inner, lhs, nabla_grad, rhs, solve, sym)
+# solver = 'cg'
+linear_solver, preconditioner = "gmres", "ilu"
+# linear_solver, preconditioner = "cg", "hypre_amg"
+# linear_solver, preconditioner = 'petsc', 'default'
 
+# list_linear_solver_methods()
+# Solver method  |  Description
+# ------------------------------------------------------------------------------
+# bicgstab       |  Biconjugate gradient stabilized method
+# cg             |  Conjugate gradient method
+# default        |  default linear solver
+# gmres          |  Generalized minimal residual method
+# minres         |  Minimal residual method
+# mumps          |  MUMPS (MUltifrontal Massively Parallel Sparse direct Solver)
+# petsc          |  PETSc built in LU solver
+# richardson     |  Richardson method
+# superlu        |  SuperLU
+# superlu_dist   |  Parallel SuperLU
+# tfqmr          |  Transpose-free quasi-minimal residual method
+# umfpack        |  UMFPACK (Unsymmetric MultiFrontal sparse LU factorization)
 
+# list_krylov_solver_preconditioners()
+# Preconditioner   |  Description
+# --------------------------------------------------------------
+# amg              |  Algebraic multigrid
+# default          |  default preconditioner
+# hypre_amg        |  Hypre algebraic multigrid (BoomerAMG)
+# hypre_euclid     |  Hypre parallel incomplete LU factorization
+# hypre_parasails  |  Hypre parallel sparse approximate inverse
+# icc              |  Incomplete Cholesky factorization
+# ilu              |  Incomplete LU factorization
+# jacobi           |  Jacobi iteration
+# none             |  No preconditioner
+# petsc_amg        |  PETSc algebraic multigrid
+# sor              |  Successive over-relaxation
 def epsilon(u):
     # Define symmetric gradient
     return sym(nabla_grad(u))
@@ -48,7 +81,7 @@ class TutorialTentativeVelocityStep():
 
         b1 = assemble(L1)
         [bc.apply(b1) for bc in bcu]
-        solve(A1, u_.vector(), b1, 'bicgstab', 'hypre_amg')
+        solve(A1, u_.vector(), b1, linear_solver, preconditioner)
         return
 
 
@@ -95,7 +128,7 @@ class ImplicitTentativeVelocityStep():
                 [bc.apply(self.A) for bc in self.domain.bcu]
             b = assemble(self.L)
             [bc.apply(b) for bc in bcu]
-            solve(self.A, u_.vector(), b, 'bicgstab', 'hypre_amg')
+            solve(self.A, u_.vector(), b, linear_solver, preconditioner)
             # u_k.assign(u_)
         return
 
@@ -132,7 +165,7 @@ class ExplicitTentativeVelocityStep():
             [bc.apply(self.A) for bc in bcu]
         b = assemble(self.L)
         [bc.apply(b) for bc in bcu]
-        solve(self.A, u_.vector(), b, 'bicgstab', 'hypre_amg')
+        solve(self.A, u_.vector(), b, linear_solver, preconditioner)
         return
 
 
@@ -163,7 +196,7 @@ class PressureStep():
 
         b = assemble(self.L)
         [bc.apply(b) for bc in bcp]
-        solve(self.A, p_.vector(), b, 'bicgstab', 'hypre_amg')
+        solve(self.A, p_.vector(), b, linear_solver, preconditioner)
         return
 
 
@@ -186,5 +219,5 @@ class VelocityCorrectionStep():
 
         b = assemble(self.L)
         [bc.apply(b) for bc in bcu]
-        solve(self.A, u_.vector(), b, 'bicgstab', 'hypre_amg')
+        solve(self.A, u_.vector(), b, linear_solver, preconditioner)
         return

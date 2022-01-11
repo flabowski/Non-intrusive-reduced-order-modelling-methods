@@ -101,7 +101,7 @@ class CavityProblemSetup():
         # self.u_k.vector().vec().array[:] = 1e-6
         self.p_.vector().vec().array[:] = -self.rho.vector().vec().array*g*y
         self.p_1.vector().vec().array[:] = -self.rho.vector().vec().array*g*y
-        self.t_1.vector().vec().array = T_init
+        self.t_1.vector().vec().array = T_init-x*10
         self.t_.assign(self.t_1)
         return
 
@@ -130,13 +130,14 @@ class CavityProblemSetup():
         vu, vp = split(vup)  # Test
         u_, p_ = split(up_)  # Function holding the solution
         F = self.mu*inner(grad(vu), grad(u))*dx - inner(div(vu), p)*dx \
-            - inner(vp, div(u))*dx + dot(self.g*self.rho, vu)*dx
+            - inner(vp, div(u))*dx - dot(self.g*self.rho, vu)*dx
         solve(lhs(F) == rhs(F), up_, bcs=bcs)
         self.u_.assign(project(u_, self.V))
         self.p_.assign(project(p_, self.Q))
         return
 
     def initial_condition_from_file(self, path_u, path_p):
+        # path_u, path_p = "../u_.xdmf", "../p_.xdmf"
         f_in = XDMFFile(path_u)
         f_in.read_checkpoint(self.u_, "f", 0)
         f_in = XDMFFile(path_p)
@@ -186,7 +187,7 @@ class CavityProblemSetup():
         mesh = self.mesh
         w0 = u.compute_vertex_values(mesh)
         w0.shape = (2, -1)
-        magnitude = np.linalg.norm(w0, axis=0)
+        magnitude = np.linalg.norm(w0, axis=0)*100
         x, y = np.split(mesh.coordinates(), 2, 1)
         u, v = np.split(w0, 2, 0)
         x, y, u, v = x.ravel(), y.ravel(), u.ravel(), v.ravel()
@@ -207,26 +208,26 @@ class CavityProblemSetup():
         if np.sum(not0) > 0:
             ax1.quiver(x[not0], y[not0], u[not0], v[not0], magnitude[not0])
         c2 = ax2.tricontourf(x, y, tri, pressure, levels=40, cmap=cmap)
-        c3 = ax3.tricontourf(x, y, tri, temperature, levels=40, cmap=cmap)
+        c3 = ax3.tricontourf(x, y, tri, temperature, levels=40, cmap=cmap,
+                             vmin=610.0, vmax=660.0
+                             )
+        # print(viscosity)
         c4 = ax4.tricontourf(x, y, tri, viscosity, levels=40,
-                             # vmin=self.mu(800, .1), vmax=self.mu(600, .1),
+                              # vmin=1, vmax=3,
                              cmap=cmap_r)
         c5 = ax5.tricontourf(x, y, tri, density, levels=40,
-                             # vmin=self.rho(800.), vmax=self.rho(600.),
+                              # vmin=self.rho(800.), vmax=self.rho(600.),
                              cmap=cmap_r)
         plt.colorbar(c2, ax=ax2)
-        plt.colorbar(c3, ax=ax3,
-                     ticks=[temperature.min(), temperature.max()])
-        plt.colorbar(c4, ax=ax4,
-                     ticks=[viscosity.min(), viscosity.max()])
-        plt.colorbar(c5, ax=ax5,
-                     ticks=[density.min(), density.max()])
+        plt.colorbar(c3, ax=ax3)
+        plt.colorbar(c4, ax=ax4)
+        plt.colorbar(c5, ax=ax5)
         ax1.set_aspect("equal")
         ax2.set_aspect("equal")
         ax3.set_aspect("equal")
         ax4.set_aspect("equal")
         ax5.set_aspect("equal")
-        ax1.set_title("velocity\n{:.4f} ... {:.5f} m/s".format(
+        ax1.set_title("velocity\n{:.4f} ... {:.5f} cm/s".format(
             magnitude.min(), magnitude.max()))
         ax2.set_title("pressure")
         ax3.set_title("temperature")

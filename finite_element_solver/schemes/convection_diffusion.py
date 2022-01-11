@@ -6,7 +6,8 @@ Created on Thu Mar  4 11:30:48 2021
 @author: florianma
 
 """
-from dolfin import (dx, solve, lhs, rhs, dot, assemble, grad)
+from dolfin import (dx, solve, lhs, rhs, dot, assemble, grad, parameters)
+prm = parameters['krylov_solver']  # short form
 
 
 class ConvectionDiffusion():
@@ -44,6 +45,10 @@ class ConvectionDiffusion():
         A = assemble(a)
         self.a, self.L, self.A = a, L, A
         self.domain = domain
+
+        prm['absolute_tolerance'] = 1E-10
+        prm['relative_tolerance'] = 1E-6
+        prm['maximum_iterations'] = 1000
         return
 
     def solve(self):
@@ -54,5 +59,8 @@ class ConvectionDiffusion():
         b = assemble(L)
         [bc.apply(A) for bc in bct]
         [bc.apply(b) for bc in bct]
-        solve(A, t_.vector(), b, 'bicgstab', 'hypre_amg')  # gmres
+        # bicgstab, might have stability issues
+        # gmres: non-symmetric, take care of stopping parameters
+        solve(A, t_.vector(), b, 'gmres', 'ilu')
+        # parameters
         return
