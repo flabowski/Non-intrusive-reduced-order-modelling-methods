@@ -50,4 +50,4 @@ def save_cavity_mesh(lcar=0.02):
 
 
 if __name__ == "__main__":
-    msh = mesh()
+    save_cavity_mesh()

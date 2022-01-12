@@ -32,10 +32,18 @@ class Data:
     #     - splitting into train and test data
     #     -
 
-    def __init__(self, X, grid):
+    def __init__(self, X, points, grid=False):
+        if isinstance(points, np.ndarray):
+            pass
+        else:
+            XNs = np.meshgrid(*grid, indexing="ij")
+            points = np.array([XN.ravel() for XN in XNs]).T
+            self.D = len(self.grid)
+            self.mn = [len(xn) for xn in self.grid]
+            # self.n = np.prod(self.mn)
+            # self.m = len(self.X)
+        self.m, self.n = X.shape
         # D = len(grid)
-        XNs = np.meshgrid(*grid, indexing="ij")
-        points = np.array([XN.ravel() for XN in XNs]).T
         self.X = X  # snapshots
         self.points = points  # parameterspace
         self.grid = grid
@@ -43,10 +51,6 @@ class Data:
         # self.y = y  # mesh vertices (y)
         # self.tri = tri  # mesh triangles
 
-        self.D = len(self.grid)
-        self.mn = [len(xn) for xn in self.grid]
-        self.n = np.prod(self.mn)
-        self.m = len(self.X)
         # n: number of nodes (s1) * number of physical quantities (s2)
         # m: number of snapshots = num datasets (d2) * snapshots_per_dataset (d1)
         # r: truncation rank
@@ -344,13 +348,13 @@ def get_snapshot_matrix():
     return X, P
 
 
-def load_snapshots_cylinder(path):
+def load_snapshots_cylinder_old(path):
     x = np.load(path + "x.npy")
     y = np.load(path + "y.npy")
     tri = np.load(path + "tri.npy")
     time = np.load(path + "Re020_time.npy")
     Res = np.array([20, 33, 50, 60, 75, 100, 125, 150, 200])
-    s1 = 4  # u, v, p and T
+    s1 = 3  # u, v, p
     s2 = len(x)
     d1 = len(time)
     d2 = len(Res)
@@ -374,7 +378,6 @@ def load_snapshots_cylinder(path):
         U[0, :, :, i] = u
         U[1, :, :, i] = v
         U[2, :, :, i] = p
-        # U[3, :, :, i] = temp
         xi[:, i, 0] = time
         xi[:, i, 1] = Re
         print(Re, ":", p.shape, len(time))
@@ -383,6 +386,53 @@ def load_snapshots_cylinder(path):
     te = xi[:, 0].reshape(-1, 9).T[:, -1]
     ts = xi[:, 0].reshape(-1, 9).T[:, 0]
     phase_length = te - ts
+    return U, xi, x, y, tri, dimensions, phase_length
+
+
+def load_snapshots_cylinder(path):
+    x = np.load(path + "x.npy")
+    y = np.load(path + "y.npy")
+    tri = np.load(path + "tri.npy")
+    time = np.load(path + "Re020_time.npy")
+    Res = np.array([20, 33, 50, 60, 75, 100, 125, 150, 200])
+    s1 = 3  # u, v, p
+    s2 = len(x)
+    # d1 = len(time)
+    # d2 = len(Res)
+    n, m = s1 * s2, 52217
+    dimensions = [[s1, s2], m]
+    D = 2  # time and Re
+    print("n physical quantities", s1)
+    print("n_nodes", s2)
+    print("snapshots_per_dataset unknown")
+    print("n_datasets", 9)
+    U = np.zeros((s1, s2, m))
+    xi = np.zeros((m, D))
+    phase_length = np.zeros((9))
+    s = 0
+    for i, Re in enumerate(Res):  # iteration along d2
+        u = np.load(path + "Re{:03.0f}_velocity_u.npy".format(Re))
+        v = np.load(path + "Re{:03.0f}_velocity_v.npy".format(Re))
+        time = np.load(path + "Re{:03.0f}_time.npy".format(Re))
+        e = s+len(time)
+        print(time.shape)
+        # t_min, t_max = time.min(), time.max()
+        # t_range = t_max-t_min
+        # time = (time-t_min)/t_range
+        p = np.load(path + "Re{:03.0f}_pressure.npy".format(Re))
+        U[0, :, s:e] = u
+        U[1, :, s:e] = v
+        U[2, :, s:e] = p
+        xi[s:e, 0] = time
+        xi[s:e, 1] = Re
+        s = e
+        phase_length[i] = time[-1]-time[0]
+        print(Re, ":", p.shape, len(time))
+    U.shape = (n, m)
+    xi.shape = (m, D)
+    # te = xi[:, 0].reshape(-1, 9).T[:, -1]
+    # ts = xi[:, 0].reshape(-1, 9).T[:, 0]
+     # = te - ts
     return U, xi, x, y, tri, dimensions, phase_length
 
 

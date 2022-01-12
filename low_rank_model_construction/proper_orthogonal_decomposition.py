@@ -185,11 +185,15 @@ def row_svd(X, c, eps, ommit_V, QR_DECOMPOSITION):
     # there might not be enough data for c blocks
     c = np.ceil(n/Nc).astype(np.int32)
     additional_svds = np.ceil(np.log2(c)).astype(np.int32)
-    eps_per_lvl = eps**(1/(1+additional_svds))
+    if not isinstance(eps, str):
+        eps_per_lvl = eps**(1/(1+additional_svds))
+    else:
+        eps_per_lvl = eps
     l_U = [None for i in range(c)]
     l_S = [None for i in range(c)]
     l_V = [None for i in range(c)]
     for j in range(c):
+        print(j)
         s, e = j*Nc, Nc*(j+1)
         if e > n:
             e = n
@@ -365,10 +369,11 @@ def merge_horizontally(U1, S1, VT1, U2, S2, VT2,
     # print(U1[:, -5:])
     t1 = timeit.default_timer()
     if QR_DECOMPOSITION:  # preferred methods, as it should be usually faster
-        if eps > 1-1E-6:
-            print(eps)
-            warnings.warn(
-                "there might be large numerical errors for eps>1-1E-6. Please set QR_DECOMPOSITION=False or eps=1-1e-6")
+        if not isinstance(eps, str):
+            if eps > 1-1E-6:
+                print(eps)
+                warnings.warn(
+                    "there might be large numerical errors for eps>1-1E-6. Please set QR_DECOMPOSITION=False or eps=1-1e-6")
         E = np.zeros((k+l, k+l))
         U1TU2 = matmul(transpose(U1), U2)
         U0 = U2 - matmul(U1, U1TU2)  # m, l
@@ -425,10 +430,12 @@ def truncate_basis(U, S, VT, eps):
         right singular values.
 
     """
-    if eps >= 1.0:
+    if isinstance(eps, str):
+        r = int(eps[:-5])
+    elif eps >= 1.0:
         # print("no truncation.")
         return U, S, VT
-    if np.sum(S) == 0:
+    elif np.sum(S) == 0:
         r = 1
     else:
         cum_en = np.cumsum(S)
