@@ -10,9 +10,9 @@ Simulation gets slower and slower. 1st iteration takes 2s, 10th iteration 30s.
 from dolfin import (Constant, FacetNormal, Identity, assemble, div, dot, ds,
                     dx, grad, inner, lhs, nabla_grad, rhs, solve, sym)
 # solver = 'cg'
-linear_solver, preconditioner = "gmres", "ilu"
-# linear_solver, preconditioner = "cg", "hypre_amg"
-# linear_solver, preconditioner = 'petsc', 'default'
+linear_solver, preconditioner = "gmres", "ilu"  # works O.K. -ish
+linear_solver, preconditioner = "cg", "hypre_amg"  # not so good here
+linear_solver, preconditioner = 'petsc', 'default'  # nice results
 
 # list_linear_solver_methods()
 # Solver method  |  Description
