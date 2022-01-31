@@ -33,9 +33,7 @@ class Data:
     #     -
 
     def __init__(self, X, points, grid=False):
-        if isinstance(points, np.ndarray):
-            pass
-        else:
+        if grid:
             XNs = np.meshgrid(*grid, indexing="ij")
             points = np.array([XN.ravel() for XN in XNs]).T
             self.D = len(self.grid)
