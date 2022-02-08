@@ -59,8 +59,11 @@ def create_entity_mesh(mesh, cell_type, prune_z=False,
     # Create output mesh
     out_mesh = meshio.Mesh(points=points, cells={cell_type: cells},
                            cell_data={"name_to_read": [cell_data]})
+    
     if prune_z:
-        out_mesh.prune_z_0()
+        out_mesh.points = out_mesh.points[:, :2].copy()
+        # out_mesh.prune_z_0()
+        print(out_mesh.points)
     return out_mesh
 
 
@@ -71,8 +74,8 @@ def to_file(msh):
     # 'medit', 'nastran', 'neuroglancer', 'obj', 'off', 'permas', 'ply',
     # 'stl', 'su2', 'svg', 'tecplot', 'tetgen', 'ugrid', 'vtk', 'vtu',
     # 'wkt', 'xdmf'], xdmf fails sometimes
-    input_mesh = create_entity_mesh(msh, "triangle", False, True)
-    facet_mesh  =  create_entity_mesh(msh, "line", False)
+    input_mesh = create_entity_mesh(msh, "triangle", True, True)
+    facet_mesh  =  create_entity_mesh(msh, "line", True)
     
     meshio.write("../mesh.xdmf", input_mesh, file_format="xdmf")
     meshio.write("../mf.xdmf", facet_mesh, file_format="xdmf")

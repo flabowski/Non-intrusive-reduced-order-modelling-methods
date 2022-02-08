@@ -203,8 +203,8 @@ def row_svd(X, c, eps, ommit_V, QR_DECOMPOSITION):
     t1 = timeit.default_timer()
     print("svds took {:.4f} s, reduced rank: {:.0f}".format(t1-t0, r))
     U, S, VT = merge_row(l_U, l_S, l_V, ommit_V, QR_DECOMPOSITION, eps_per_lvl)
-    if ommit_V:
-        VT = matmul(transpose(U)*1/S[:, None], X)
+    # if ommit_V:
+    #     VT = matmul(transpose(U)*1/S[:, None], X)
     t2 = timeit.default_timer()
     print("merging took {:.4f} s, reduced rank: {:.0f}".format(t2-t1, len(S)))
     return U, S, VT

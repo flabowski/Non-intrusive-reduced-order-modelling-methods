@@ -8,7 +8,8 @@ Created on Mon May  3 15:04:00 2021
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-from low_rank_model_construction.proper_orthogonal_decomposition import svd, truncate_basis
+from low_rank_model_construction.proper_orthogonal_decomposition import (svd,
+    truncate_basis, row_svd)
 LINALG_LIB = "numpy"
 
 
@@ -31,15 +32,14 @@ class Data:
     #     - normalising / scaling
     #     - splitting into train and test data
     #     -
+    #TODO: grid / points needed?
 
     def __init__(self, X, points, grid=False):
-        if isinstance(points, np.ndarray):
-            pass
-        else:
+        if grid:
             XNs = np.meshgrid(*grid, indexing="ij")
             points = np.array([XN.ravel() for XN in XNs]).T
-            self.D = len(self.grid)
-            self.mn = [len(xn) for xn in self.grid]
+            self.D = len(grid)
+            self.mn = [len(xn) for xn in grid]
             # self.n = np.prod(self.mn)
             # self.m = len(self.X)
         self.m, self.n = X.shape
@@ -107,10 +107,6 @@ class Data:
     def scale_up(self, Snapshots_n):
         return Snapshots_n * self.X_range + self.X_min
 
-    def decompose(self, eps=1.0-1e-6):
-        self.U, self.S, self.VT = truncate_basis(*svd(self.X), eps)
-        return
-
     def from_reduced_space(self, VT):
         return matmul(self.U * self.S, VT)
 
@@ -128,6 +124,28 @@ class Data:
     def std_rb(self, X, Xa):
         var = self.var_rb(X, Xa)
         return np.sqrt(var)
+
+    def hierarchical_decomposition(self, eps=1.0-1e-6):
+        X_n = self.X_n
+        a = np.arange(len(X_n[0]))
+        np.random.shuffle(a)
+        U, S, VT = row_svd(X_n[:, a], 8, eps=1.0-1E-5,
+                           ommit_V=True, QR_DECOMPOSITION=True)
+        #TODO: use argsort to order? -> not if VT is not returned at all
+        VT_ordered  = 1/S[:, None] * (U.T @ X_n)
+        self.U, self.S, self.VT = U, S, VT_ordered
+        return U, S, VT_ordered
+
+
+class DataFromFile(Data):
+    def __init__(self, path):
+        path = "//files.ad.ife.no/MatPro_files/Florian/CavitySolidification/Tamb630_"
+        temp = np.load(path+"temp.npy")
+        time = np.load(path+"time.npy")
+        X = np.load(path+"time.npy")
+        grid = (temp, time)
+        # TODO: add support for loading points
+        super().__init__(X, False, grid)
 
 
 def split2D(data, set_i, phase_length=None):

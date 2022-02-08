@@ -30,10 +30,116 @@ elif LINALG_LIB == "numpy":
     matmul = np.matmul
     reshape = np.reshape
     inv = np.linalg.inv
+    
+class ReducedOrderModel():
+    def __init__(self, grid, U, S, VT, X_min, X_range):
+        self.grid = grid
+        self.U = U
+        self.S = S
+        self.VT = VT
+        self.X_min = X_min
+        self.X_range = X_range
+        self.m = U.shape[0]
+        self.n = VT.shape[1]
+        self.reduced_rank = self.r = len(S)
+        # TODO: RightSingularValueInterpolator should probably be a method, not
+        self.interpolators = self.get_interpolators(grid, VT)
+        return
+
+    def scale_down(self, Snapshots):
+        return (Snapshots - self.X_min) / self.X_range
+
+    def scale_up(self, Snapshots_n):
+        return Snapshots_n * self.X_range + self.X_min
+
+    def from_reduced_space(self, VT):
+        return matmul(self.U * self.S, VT)
+
+    def to_reduced_space(self, X):
+        return matmul(transpose(self.U), X) / self.S[:, None]
+
+    def predict_timeseries(self, p_new):
+        # assumes grid[0] is a parameter and grid[1] is time
+        # FIXME: only works with RectBivariateSpline
+        time = self.grid[1]
+        V_interpolated = np.zeros((self.r, len(time)))
+        for i in range(self.r):
+            V_interpolated[i, :] = self.interpolators[i](p_new, time).ravel()
+        X_approx_n = self.from_reduced_space(V_interpolated)
+        X_approx = self.scale_up(X_approx_n)  # n, d1
+        return X_approx, X_approx_n
+    
+    def predict(self, xi):
+        time = self.grid[1]
+        V_interpolated = np.zeros((self.r, 1))
+        for i in range(self.r):
+            V_interpolated[i, :] = self.interpolators[i](*xi).ravel()
+        X_approx_n = self.from_reduced_space(V_interpolated)
+        X_approx = self.scale_up(X_approx_n)  # n, d1
+        return X_approx, X_approx_n
+    
+    def get_interpolators(self, grid, VT, method="linear", bounds_error=True, fill_value=np.nan):
+        # TODO: adjust for n-D 
+        values = VT.reshape(-1, len(grid[0]), len(grid[1]))
+        # m, n = xi.shape
+        d = len(grid)
+        _1D_methods = ['linear', 'nearest', 'nearest-up', 'zero', 'slinear',
+                       'quadratic', 'cubic', 'previous', 'next']
+        _2D_methods = ['linear', 'cubic', 'quintic', "CloughTocher2DInterpolator"]
+        nD_methods = ["linear", "nearest", "rbf", "basis functions"]
+        if d == 1:
+            assert method in _1D_methods, "unknown method '{}'".format(method)
+        elif d == 2:
+            assert method in _2D_methods, "unknown method '{}'".format(method)
+        else:
+            assert method in nD_methods, "unknown method '{}'".format(method)
+        # self.r = r = values.shape[0]
+        for dim in range(d):
+            mn = values.shape[dim + 1]
+            msg = "Mismatching arrays! Got {:.0f} grid points along axis {:.0f} but {:.0f} values.".format(
+                len(grid[dim]), dim, mn)
+            assert len(grid[dim]) == mn, msg
+            # consider VT.reshape(r, len(grid[0]), len(grid[1])) !
+        XNs = np.meshgrid(*grid, indexing="ij")
+        points = np.array([XN.ravel() for XN in XNs]).T
+        # print(points.shape, values.shape[1:])
+        # print("interpolating {:.0f} time(s)".format(r))
+        r = len(VT)
+        interpolators = np.empty(r, dtype=object)
+        for i in range(r):
+            if d == 1:
+                interpolators[i] = interp1d(grid[0],
+                                                 values[i, :], kind=method)
+            elif d == 2:
+                # interp2d(grid[0], grid[1], values[i, :], kind=method)
+                # TODO: RectBivariateSpline is supposed to be faster
+                deg = {"linear": 1,
+                       "quadratic": 2,
+                       "cubic": 3,
+                       "quartic": 4,
+                       "quintic": 5}
+                rbs = RectBivariateSpline(grid[0], grid[1], values[i, ...],
+                                          kx=deg[method], ky=deg[method])
+                interpolators[i] = rbs
+            else:
+                if method in ["linear", "nearest"]:
+                    interpolators[i] = RegularGridInterpolator(grid, values[i, :], method=method)
+                elif method == "rbf":
+                    interpolators[i] = Rbf(points, values[i, :])
+                    # self.interpolators[i] = RBFInterpolator(xy, vals.ravel(), kernel=function)
+                elif method == "basis functions":
+                    interpolators[i] = BasisFunctionRegularGridInterpolator(grid, values[i, :])
+                elif method == "CloughTocher2DInterpolator":
+                    interpolators[i] = CloughTocher2DInterpolator(points, values[i, :].ravel())
+                else:
+                    raise ValueError("unknown method '{}'".format(method))
+        return interpolators
 
 
 class RightSingularValueInterpolator():
-    def __init__(self, grid, values, method="linear", bounds_error=True, fill_value=np.nan):
+    def __init__(self, grid, U, S, VT, method="linear", bounds_error=True, fill_value=np.nan):
+        # TODO: adjust for n-D 
+        values = VT.reshape(-1, len(grid[0]), len(grid[1]))
         # m, n = xi.shape
         d = len(grid)
         _1D_methods = ['linear', 'nearest', 'nearest-up', 'zero', 'slinear',
@@ -52,6 +158,7 @@ class RightSingularValueInterpolator():
             msg = "Mismatching arrays! Got {:.0f} grid points along axis {:.0f} but {:.0f} values.".format(
                 len(grid[dim]), dim, mn)
             assert len(grid[dim]) == mn, msg
+            # consider VT.reshape(r, len(grid[0]), len(grid[1])) !
         XNs = np.meshgrid(*grid, indexing="ij")
         points = np.array([XN.ravel() for XN in XNs]).T
         # print(points.shape, values.shape[1:])
@@ -62,8 +169,16 @@ class RightSingularValueInterpolator():
                 self.interpolators[i] = interp1d(grid[0],
                                                  values[i, :], kind=method)
             elif d == 2:
-                self.interpolators[i] = interp2d(grid[0], grid[0],
-                                                 values[i, :], kind=method)
+                # interp2d(grid[0], grid[1], values[i, :], kind=method)
+                # TODO: RectBivariateSpline is supposed to be faster
+                deg = {"linear": 1,
+                       "quadratic": 2,
+                       "cubic": 3,
+                       "quartic": 4,
+                       "quintic": 5}
+                rbs = RectBivariateSpline(grid[0], grid[1], values[i, ...],
+                                          kx=deg[method], ky=deg[method])
+                self.interpolators[i] = rbs
             else:
                 if method in ["linear", "nearest"]:
                     self.interpolators[i] = RegularGridInterpolator(grid, values[i, :], method=method)
@@ -76,9 +191,13 @@ class RightSingularValueInterpolator():
                     self.interpolators[i] = CloughTocher2DInterpolator(points, values[i, :].ravel())
                 else:
                     raise ValueError("unknown method '{}'".format(method))
-        return
+        return self.interpolators
 
     def __call__(self, xi):
+        # FIXME: some interpolators are called with
+        # interpolator(xi[:, 0], xi[:, 1])
+        # others are called with 
+        # interpolator(xi)
         n, d = xi.shape
         # r = values.shape[0]
         V_interpolated = np.zeros((self.r, n))
